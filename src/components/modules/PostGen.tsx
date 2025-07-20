@@ -149,7 +149,11 @@ export const PostGen = () => {
     setIsPosting(true);
 
     try {
-      await createLinkedInPost(accessToken, contentToPost);
+      await createLinkedInPost(
+        accessToken,
+        contentToPost,
+        uploadedFile || undefined
+      );
       showNotification("success", "Post successfully published to LinkedIn!");
       console.log("Post posted:", contentToPost);
 
@@ -182,7 +186,11 @@ export const PostGen = () => {
 
     try {
       // For now, just post immediately since scheduling requires additional setup
-      await createLinkedInPost(accessToken, contentToPost);
+      await createLinkedInPost(
+        accessToken,
+        contentToPost,
+        uploadedFile || undefined
+      );
       showNotification(
         "success",
         "Post successfully published to LinkedIn! (Scheduling feature coming soon)"

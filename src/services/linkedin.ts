@@ -59,8 +59,20 @@ export const fetchLinkedInSnapshot = async (token: string, domain?: string) => {
 export const createLinkedInPost = async (
   token: string,
   content: string,
-  mediaUrl?: string
+  mediaFile?: File
 ) => {
+  // Convert file to base64 if provided
+  let mediaFileBase64: string | undefined;
+
+  if (mediaFile) {
+    try {
+      mediaFileBase64 = await fileToBase64(mediaFile);
+    } catch (error) {
+      console.error("Error converting file to base64:", error);
+      throw new Error("Failed to process media file");
+    }
+  }
+
   const response = await fetch(`${API_BASE}/linkedin-post`, {
     method: "POST",
     headers: {
@@ -70,7 +82,7 @@ export const createLinkedInPost = async (
     },
     body: JSON.stringify({
       content,
-      mediaUrl,
+      mediaFile: mediaFileBase64,
     }),
   });
 
@@ -83,6 +95,16 @@ export const createLinkedInPost = async (
   }
 
   return response.json();
+};
+
+// Helper function to convert File to base64
+const fileToBase64 = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (error) => reject(error);
+  });
 };
 
 export const initiateLinkedInAuth = (type: "basic" | "dma" = "basic") => {
