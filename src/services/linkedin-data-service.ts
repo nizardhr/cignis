@@ -1,10 +1,34 @@
 export class LinkedInDataService {
+  private cache: Map<string, { data: any; timestamp: number }> = new Map();
+  private readonly CACHE_DURATION = 60 * 60 * 1000; // 1 hour cache
+
+  private getCachedData(key: string): any | null {
+    const cached = this.cache.get(key);
+    if (cached && Date.now() - cached.timestamp < this.CACHE_DURATION) {
+      console.log(`Using cached data for: ${key}`);
+      return cached.data;
+    }
+    return null;
+  }
+
+  private setCachedData(key: string, data: any): void {
+    this.cache.set(key, { data, timestamp: Date.now() });
+    console.log(`Cached data for: ${key}`);
+  }
+
   async fetchProfileViews(token: string) {
     try {
       console.log(
         "Fetching profile views with DMA token:",
         token ? "Token available" : "No token"
       );
+
+      // Check cache first
+      const cacheKey = `profile_views_${token.substring(0, 20)}`;
+      const cachedData = this.getCachedData(cacheKey);
+      if (cachedData) {
+        return cachedData;
+      }
 
       const response = await fetch(
         "/.netlify/functions/linkedin-snapshot?domain=PROFILE",
@@ -14,11 +38,29 @@ export class LinkedInDataService {
       );
 
       if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 429) {
+          throw new Error(
+            `LinkedIn API Rate Limit Exceeded: ${
+              errorData.message ||
+              "Daily limit reached. Please try again tomorrow."
+            }`
+          );
+        }
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const data = await response.json();
       console.log("Raw profile snapshot response:", data);
+
+      // Check if LinkedIn returned an error response
+      if (data.status === 429) {
+        throw new Error(
+          `LinkedIn API Rate Limit Exceeded: ${
+            data.message || "Daily limit reached. Please try again tomorrow."
+          }`
+        );
+      }
 
       // Handle different possible response structures
       let profileData = [];
@@ -105,15 +147,19 @@ export class LinkedInDataService {
         console.log("Profile data item values:", item);
       });
 
-      console.log("Processed profile metrics:", {
-        profileViews,
-        searchAppearances,
-        uniqueViewers,
-      });
+      const result = { profileViews, searchAppearances, uniqueViewers };
+      console.log("Processed profile metrics:", result);
 
-      return { profileViews, searchAppearances, uniqueViewers };
+      // Cache the result
+      this.setCachedData(cacheKey, result);
+
+      return result;
     } catch (error) {
       console.error("Error fetching profile views:", error);
+      // Re-throw rate limit errors so they can be handled by the UI
+      if (error instanceof Error && error.message.includes("Rate Limit")) {
+        throw error;
+      }
       return { profileViews: 0, searchAppearances: 0, uniqueViewers: 0 };
     }
   }
@@ -130,11 +176,29 @@ export class LinkedInDataService {
       );
 
       if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        if (response.status === 429) {
+          throw new Error(
+            `LinkedIn API Rate Limit Exceeded: ${
+              errorData.message ||
+              "Daily limit reached. Please try again tomorrow."
+            }`
+          );
+        }
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const data = await response.json();
       console.log("Raw connections response:", data);
+
+      // Check if LinkedIn returned an error response
+      if (data.status === 429) {
+        throw new Error(
+          `LinkedIn API Rate Limit Exceeded: ${
+            data.message || "Daily limit reached. Please try again tomorrow."
+          }`
+        );
+      }
 
       // Handle different possible response structures
       let connections = [];
@@ -173,6 +237,10 @@ export class LinkedInDataService {
       return result;
     } catch (error) {
       console.error("Error fetching connections:", error);
+      // Re-throw rate limit errors so they can be handled by the UI
+      if (error instanceof Error && error.message.includes("Rate Limit")) {
+        throw error;
+      }
       return {
         total: 0,
         monthlyGrowth: 0,
