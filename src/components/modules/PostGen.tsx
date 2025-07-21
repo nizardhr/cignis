@@ -23,6 +23,22 @@ interface GeneratedPost {
   timestamp: number;
 }
 
+interface IdeaData {
+  title: string;
+  description: string;
+  category: string;
+  timestamp: number;
+}
+
+// Constants for better maintainability
+const SESSION_STORAGE_KEYS = {
+  REPURPOSE_POST: "repurposePost",
+  IDEA_CONTENT: "ideaContent",
+} as const;
+
+const AUTO_GENERATE_DELAY = 1000;
+const NOTIFICATION_DURATION = 5000;
+
 export const PostGen = () => {
   const location = useLocation();
   const { accessToken } = useAuthStore();
@@ -48,20 +64,22 @@ export const PostGen = () => {
 
   const showNotification = (type: "success" | "error", message: string) => {
     setNotification({ type, message });
-    setTimeout(() => setNotification(null), 5000);
+    setTimeout(() => setNotification(null), NOTIFICATION_DURATION);
   };
 
   // Check if we came from PostPulse with a post to rewrite
   useEffect(() => {
     // Check for repurposed post from PostPulse
-    const repurposeData = sessionStorage.getItem("repurposePost");
+    const repurposeData = sessionStorage.getItem(
+      SESSION_STORAGE_KEYS.REPURPOSE_POST
+    );
     if (repurposeData) {
       try {
         const { text, originalDate, engagement } = JSON.parse(repurposeData);
         setActiveTab("rewrite");
         setOriginalPost(text);
         // Clear the data after using it
-        sessionStorage.removeItem("repurposePost");
+        sessionStorage.removeItem(SESSION_STORAGE_KEYS.REPURPOSE_POST);
         console.log("Loaded repurposed post:", {
           text,
           originalDate,
@@ -69,6 +87,22 @@ export const PostGen = () => {
         });
       } catch (error) {
         console.error("Error parsing repurpose data:", error);
+      }
+    }
+
+    // Check for idea content from CreationEngine
+    const ideaData = sessionStorage.getItem(SESSION_STORAGE_KEYS.IDEA_CONTENT);
+    if (ideaData) {
+      try {
+        const { title, description, category } = JSON.parse(ideaData);
+        setActiveTab("create");
+        const topicText = `${title}\n\n${description}\n\nCategory: ${category}`;
+        setPostTopic(topicText);
+        // Clear the data after using it
+        sessionStorage.removeItem(SESSION_STORAGE_KEYS.IDEA_CONTENT);
+        console.log("Loaded idea content:", { title, description, category });
+      } catch (error) {
+        console.error("Error parsing idea data:", error);
       }
     }
 
@@ -86,6 +120,17 @@ export const PostGen = () => {
       setOriginalPost(decodeURIComponent(postToRewrite));
     }
   }, [location]);
+
+  // Auto-generate post when idea content is loaded
+  useEffect(() => {
+    if (postTopic && postTopic.includes("Category:") && !generatedPost) {
+      const timeoutId = setTimeout(() => {
+        handleGeneratePost();
+      }, AUTO_GENERATE_DELAY);
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [postTopic, generatedPost]);
 
   const handleGeneratePost = async () => {
     if (!postTopic.trim()) return;
