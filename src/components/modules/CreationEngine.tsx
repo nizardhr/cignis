@@ -265,11 +265,10 @@ export const CreationEngine = () => {
 
       setGeneratedIdeas(ideas);
       
-      // Scroll to ideas section after generation
-      requestAnimationFrame(() => {
-        const ideasSection = document.querySelector('[data-ideas-section]');
-        ideasSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
+      // Scroll to bottom after ideas are generated
+      setTimeout(() => {
+        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
+      }, 200);
     } catch (error) {
       console.error("Failed to generate content ideas:", error);
       // Fallback ideas
