@@ -50,7 +50,7 @@ LinkedIn Growth SaaS is a comprehensive platform designed to help professionals 
 - **PostCSS & Autoprefixer**: CSS processing
 - **Lucide React**: Icon library
 
-## 🏗 Project Architecture
+## 🏗 Project Architecture:
 
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
