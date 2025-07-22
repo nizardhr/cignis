@@ -63,7 +63,7 @@ export const PostPulse = () => {
             
             // Only process if we have essential data
             if (postUrl || commentary) {
-              const postId = extractUrnFromUrl(postUrl) || `historical_${index}`;
+              const postId = postUrl.match(/activity-(\d+)/) ? `urn:li:activity:${postUrl.match(/activity-(\d+)/)?.[1]}` : `historical_${index}`;
               const createdTime = shareDate ? new Date(shareDate).getTime() : Date.now() - (index * 24 * 60 * 60 * 1000);
               
               // Calculate days since posted
