@@ -264,6 +264,12 @@ export const CreationEngine = () => {
       const ideas = ideaSets[randomIndex];
 
       setGeneratedIdeas(ideas);
+      
+      // Scroll to ideas section after generation
+      requestAnimationFrame(() => {
+        const ideasSection = document.querySelector('[data-ideas-section]');
+        ideasSection?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
     } catch (error) {
       console.error("Failed to generate content ideas:", error);
       // Fallback ideas
@@ -447,7 +453,7 @@ export const CreationEngine = () => {
 
       {/* Generated Ideas */}
       {generatedIdeas.length > 0 && (
-        <Card variant="glass" className="p-6">
+        <Card variant="glass" className="p-6" data-ideas-section>
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold">Content Ideas</h3>
             <Button
