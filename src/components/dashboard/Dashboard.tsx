@@ -64,7 +64,13 @@ const MetricCard = ({
   </Card>
 );
 
-const ActivityItem = ({ label, value }: { label: string; value: number }) => (
+const ActivityItem = ({
+  label,
+  value,
+}: {
+  label: string;
+  value: number | string;
+}) => (
   <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
     <span className="text-sm font-medium text-gray-700">{label}</span>
     <span className="text-lg font-bold text-blue-600">{value}</span>
@@ -120,165 +126,10 @@ export const Dashboard = () => {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [debugData, setDebugData] = useState<any>(null);
-
-  // Debug authentication state
-  console.log("Dashboard - Auth state:", {
-    hasAccessToken: !!accessToken,
-    hasDmaToken: !!dmaToken,
-    isBasicAuthenticated,
-    isFullyAuthenticated,
-    dmaTokenLength: dmaToken?.length || 0,
-    accessTokenLength: accessToken?.length || 0,
-  });
-
-  const testDMAToken = async () => {
-    if (!dmaToken) {
-      console.log("No DMA token available for testing");
-      return;
-    }
-
-    console.log("Testing DMA token directly...");
-    console.log(
-      "DMA token (first 20 chars):",
-      dmaToken.substring(0, 20) + "..."
-    );
-
-    try {
-      // Test profile snapshot
-      console.log("Testing profile snapshot API...");
-      const profileResponse = await fetch(
-        "/.netlify/functions/linkedin-snapshot?domain=PROFILE",
-        {
-          headers: { Authorization: `Bearer ${dmaToken}` },
-        }
-      );
-
-      console.log("Profile test response status:", profileResponse.status);
-      console.log(
-        "Profile test response headers:",
-        Object.fromEntries(profileResponse.headers.entries())
-      );
-
-      const profileData = await profileResponse.json();
-      console.log("Profile test raw data:", profileData);
-
-      // Validate profile data structure
-      if (profileData.elements && profileData.elements.length > 0) {
-        console.log("✓ Profile data has elements array");
-        const firstElement = profileData.elements[0];
-        if (firstElement.snapshotData) {
-          console.log(
-            "✓ Profile data has snapshotData array with",
-            firstElement.snapshotData.length,
-            "items"
-          );
-          if (firstElement.snapshotData.length > 0) {
-            console.log(
-              "✓ First snapshot data item keys:",
-              Object.keys(firstElement.snapshotData[0])
-            );
-          } else {
-            console.log("✗ Profile snapshotData is empty");
-          }
-        } else {
-          console.log("✗ Profile data missing snapshotData");
-        }
-      } else {
-        console.log("✗ Profile data missing elements array or empty");
-      }
-
-      // Test changelog
-      console.log("Testing changelog API...");
-      const changelogResponse = await fetch(
-        "/.netlify/functions/linkedin-changelog?count=10",
-        {
-          headers: { Authorization: `Bearer ${dmaToken}` },
-        }
-      );
-
-      console.log("Changelog test response status:", changelogResponse.status);
-      console.log(
-        "Changelog test response headers:",
-        Object.fromEntries(changelogResponse.headers.entries())
-      );
-
-      const changelogData = await changelogResponse.json();
-      console.log("Changelog test raw data:", changelogData);
-
-      // Validate changelog data structure
-      if (changelogData.elements) {
-        console.log(
-          "✓ Changelog data has elements array with",
-          changelogData.elements.length,
-          "items"
-        );
-        if (changelogData.elements.length > 0) {
-          console.log(
-            "✓ First changelog item keys:",
-            Object.keys(changelogData.elements[0])
-          );
-          console.log("✓ Resource names found:", [
-            ...new Set(
-              changelogData.elements.map((el: any) => el.resourceName)
-            ),
-          ]);
-        } else {
-          console.log("✗ Changelog elements array is empty");
-        }
-      } else {
-        console.log("✗ Changelog data missing elements array");
-      }
-
-      // Test connections
-      console.log("Testing connections API...");
-      const connectionsResponse = await fetch(
-        "/.netlify/functions/linkedin-snapshot?domain=CONNECTIONS",
-        {
-          headers: { Authorization: `Bearer ${dmaToken}` },
-        }
-      );
-
-      console.log(
-        "Connections test response status:",
-        connectionsResponse.status
-      );
-      const connectionsData = await connectionsResponse.json();
-      console.log("Connections test raw data:", connectionsData);
-
-      // Validate connections data structure
-      if (connectionsData.elements && connectionsData.elements.length > 0) {
-        console.log("✓ Connections data has elements array");
-        const firstElement = connectionsData.elements[0];
-        if (firstElement.snapshotData) {
-          console.log(
-            "✓ Connections data has snapshotData array with",
-            firstElement.snapshotData.length,
-            "items"
-          );
-          if (firstElement.snapshotData.length > 0) {
-            console.log(
-              "✓ First connection item keys:",
-              Object.keys(firstElement.snapshotData[0])
-            );
-          } else {
-            console.log("✗ Connections snapshotData is empty");
-          }
-        } else {
-          console.log("✗ Connections data missing snapshotData");
-        }
-      } else {
-        console.log("✗ Connections data missing elements array or empty");
-      }
-    } catch (error) {
-      console.error("DMA token test error:", error);
-    }
-  };
 
   useEffect(() => {
     const loadMetrics = async () => {
       if (!dmaToken) {
-        console.log("Dashboard: No DMA token available");
         setLoading(false);
         return;
       }
@@ -287,7 +138,6 @@ export const Dashboard = () => {
         setLoading(true);
         setError(null);
 
-        console.log("Dashboard: Starting to load metrics with DMA token");
         const service = new LinkedInDataService();
 
         // Load all metrics in parallel
@@ -298,21 +148,6 @@ export const Dashboard = () => {
             service.fetchConnections(dmaToken),
             service.fetchActivityMetrics(dmaToken),
           ]);
-
-        console.log("Dashboard: Loaded all metrics:", {
-          profileData,
-          engagementData,
-          connectionsData,
-          activityData,
-        });
-
-        // Store debug data
-        setDebugData({
-          profileData,
-          engagementData,
-          connectionsData,
-          activityData,
-        });
 
         // Calculate total posts from user posts in engagement data
         const totalPosts = Object.keys(
@@ -335,10 +170,8 @@ export const Dashboard = () => {
           likesGiven: activityData.likesGiven || 0,
         };
 
-        console.log("Dashboard: Setting metrics:", newMetrics);
         setMetrics(newMetrics);
       } catch (err) {
-        console.error("Dashboard: Error loading metrics:", err);
         setError(
           err instanceof Error
             ? err.message
@@ -610,66 +443,6 @@ export const Dashboard = () => {
           </motion.button>
         </div>
       </Card>
-
-      {/* Debug Section - Remove this in production */}
-      {debugData && (
-        <Card variant="glass" className="p-6">
-          <h3 className="text-lg font-semibold mb-4 flex items-center">
-            <BarChart3 className="mr-2" size={20} />
-            Debug Data (Development Only)
-          </h3>
-          <div className="space-y-4">
-            <Button variant="outline" onClick={testDMAToken} className="mb-4">
-              Test DMA Token Directly
-            </Button>
-
-            {/* Authentication State */}
-            <div className="p-4 bg-blue-50 rounded-lg">
-              <h4 className="font-medium mb-2">Authentication State:</h4>
-              <div className="text-sm space-y-1">
-                <div>
-                  Access Token: {accessToken ? "✓ Present" : "✗ Missing"} (
-                  {accessToken?.length || 0} chars)
-                </div>
-                <div>
-                  DMA Token: {dmaToken ? "✓ Present" : "✗ Missing"} (
-                  {dmaToken?.length || 0} chars)
-                </div>
-                <div>Basic Auth: {isBasicAuthenticated ? "✓ Yes" : "✗ No"}</div>
-                <div>Full Auth: {isFullyAuthenticated ? "✓ Yes" : "✗ No"}</div>
-                {dmaToken && (
-                  <div>DMA Token Preview: {dmaToken.substring(0, 20)}...</div>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <h4 className="font-medium mb-2">Profile Data:</h4>
-              <pre className="text-xs bg-gray-100 p-3 rounded-lg overflow-x-auto">
-                {JSON.stringify(debugData.profileData, null, 2)}
-              </pre>
-            </div>
-            <div>
-              <h4 className="font-medium mb-2">Engagement Data:</h4>
-              <pre className="text-xs bg-gray-100 p-3 rounded-lg overflow-x-auto">
-                {JSON.stringify(debugData.engagementData, null, 2)}
-              </pre>
-            </div>
-            <div>
-              <h4 className="font-medium mb-2">Connections Data:</h4>
-              <pre className="text-xs bg-gray-100 p-3 rounded-lg overflow-x-auto">
-                {JSON.stringify(debugData.connectionsData, null, 2)}
-              </pre>
-            </div>
-            <div>
-              <h4 className="font-medium mb-2">Activity Data:</h4>
-              <pre className="text-xs bg-gray-100 p-3 rounded-lg overflow-x-auto">
-                {JSON.stringify(debugData.activityData, null, 2)}
-              </pre>
-            </div>
-          </div>
-        </Card>
-      )}
     </motion.div>
   );
 };
