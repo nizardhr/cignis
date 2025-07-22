@@ -278,18 +278,17 @@ export const CreationEngine = () => {
 
     setIsGeneratingStrategy(true);
     try {
-      const posts =
-        changelogData.elements?.filter((e) => e.resourceName === "ugcPosts") ||
-        [];
-      const metrics = analysis || {};
+      const posts = changelogData.elements?.filter(e => e.resourceName === "ugcPosts") || [];
+      const cleanPosts = posts.slice(0, 3).map(post => ({
+        text: post.activity?.specificContent?.["com.linkedin.ugc.ShareContent"]?.shareCommentary?.text?.substring(0, 200) || "Post content",
+        timestamp: post.capturedAt
+      }));
 
-      const strategy = await generateContentStrategy(posts, metrics);
+      const strategy = await generateContentStrategy(cleanPosts, analysis || {});
       setAiStrategy(strategy);
     } catch (error) {
-      console.error("Failed to generate AI strategy:", error);
-      setAiStrategy(
-        "AI strategy generation temporarily unavailable. Please check your OpenAI API configuration."
-      );
+      console.error("AI Strategy Error:", error);
+      setAiStrategy("Strategy generation failed. Please try again.");
     } finally {
       setIsGeneratingStrategy(false);
     }
