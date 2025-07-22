@@ -348,34 +348,24 @@ export const PostPulse = () => {
         </div>
       </div>
 
-      {/* Search */}
+            {/* Search and Time Filter */}
       <Card variant="glass" className="p-4">
-        <div className="relative">
-          <Search
-            size={20}
-            className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
-          />
-          <input
-            type="text"
-            placeholder="Search your posts..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
-        </div>
-      </Card>
-
-      {/* Time Filter */}
-      <Card variant="glass" className="p-4">
-        <div className="flex items-center justify-between">
-          <h3 className="text-lg font-semibold">Analytics</h3>
+        <div className="flex items-center space-x-4">
+          <div className="relative flex-1">
+            <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+            <input
+              type="text"
+              placeholder="Search your posts..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
           <div className="flex space-x-2">
             {(["7d", "30d", "90d", "365d"] as const).map((period) => (
               <button
                 key={period}
-                onClick={() => {
-                  setTimeFilter(period);
-                }}
+                onClick={() => setTimeFilter(period)}
                 className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                   timeFilter === period
                     ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white"
@@ -386,9 +376,7 @@ export const PostPulse = () => {
               </button>
             ))}
             <button
-              onClick={() => {
-                setTimeFilter("custom");
-              }}
+              onClick={() => setTimeFilter("custom")}
               className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                 timeFilter === "custom"
                   ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white"
@@ -399,7 +387,7 @@ export const PostPulse = () => {
             </button>
           </div>
         </div>
-
+        
         {/* Custom Date Picker */}
         {timeFilter === "custom" && (
           <div className="mt-4 p-4 bg-gray-50 rounded-lg">
@@ -410,12 +398,7 @@ export const PostPulse = () => {
                 <input
                   type="date"
                   value={customDates.from}
-                  onChange={(e) =>
-                    setCustomDates((prev) => ({
-                      ...prev,
-                      from: e.target.value,
-                    }))
-                  }
+                  onChange={(e) => setCustomDates(prev => ({ ...prev, from: e.target.value }))}
                   className="px-3 py-1 border border-gray-300 rounded text-sm"
                 />
               </div>
@@ -425,12 +408,7 @@ export const PostPulse = () => {
                 <input
                   type="date"
                   value={customDates.to}
-                  onChange={(e) =>
-                    setCustomDates((prev) => ({
-                      ...prev,
-                      to: e.target.value,
-                    }))
-                  }
+                  onChange={(e) => setCustomDates(prev => ({ ...prev, to: e.target.value }))}
                   className="px-3 py-1 border border-gray-300 rounded text-sm"
                 />
               </div>
