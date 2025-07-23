@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
   Search,
@@ -57,6 +57,25 @@ export const PostPulse = () => {
     useLinkedInSnapshot("RICH_MEDIA");
   const { data: changelogData, isLoading: changelogLoading } =
     useLinkedInChangelog(100);
+
+  // Account type detection
+  useEffect(() => {
+    if (changelogData || snapshotData) {
+      console.log("=== ACCOUNT ANALYSIS ===");
+      console.log("Changelog available:", !!changelogData?.elements);
+      console.log("Changelog elements:", changelogData?.elements?.length);
+      console.log("Snapshot available:", !!snapshotData?.elements);
+      console.log("Account type:", changelogData?.elements?.length > 50 ? "HIGH_VOLUME" : "NORMAL");
+      
+      if (changelogData?.elements) {
+        const resourceTypes = changelogData.elements.reduce((acc: any, el: any) => {
+          acc[el.resourceName] = (acc[el.resourceName] || 0) + 1;
+          return acc;
+        }, {});
+        console.log("Resource types in changelog:", resourceTypes);
+      }
+    }
+  }, [changelogData, snapshotData]);
 
   // Optimized date range calculation with memoization
   const dateRange = useMemo(() => {
@@ -136,210 +155,165 @@ export const PostPulse = () => {
     return map;
   }, [changelogData]);
 
-  // DMA-compliant data processing
+    // Robust data processing for high-volume accounts
   const posts = useMemo(() => {
-    if (!snapshotData?.elements && !changelogData?.elements) return [];
+    console.log("=== SNAPSHOT PROCESSING DEBUG ===");
+    console.log("Raw snapshot data:", snapshotData);
+    console.log("Snapshot structure:", snapshotData ? Object.keys(snapshotData) : "No data");
+    
+    if (!changelogData?.elements) {
+      console.log("No changelog data available");
+      return [];
+    }
 
     const processedPosts: ProcessedPost[] = [];
-    const now = Date.now();
 
     try {
-      // === DMA API STRUCTURE DEBUG ===
-      if (debugMode) {
-        console.log("=== DMA API STRUCTURE DEBUG ===");
-        console.log("Snapshot elements:", snapshotData?.elements?.length);
-        console.log(
-          "MEMBER_SHARE_INFO element:",
-          snapshotData?.elements?.find(
-            (e: any) => e.snapshotDomain === "MEMBER_SHARE_INFO"
-          )
-        );
-        console.log(
-          "First share data:",
-          snapshotData?.elements?.[0]?.snapshotData?.[0]
-        );
-        console.log("Changelog elements:", changelogData?.elements?.length);
-        console.log(
-          "UGC posts:",
-          changelogData?.elements?.filter(
-            (e: any) => e.resourceName === "ugcPosts"
-          )?.length
-        );
-        console.log(
-          "Social actions:",
-          changelogData?.elements?.filter((e: any) =>
-            e.resourceName?.includes("socialActions")
-          )?.length
-        );
-        console.log(
-          "Sample UGC post:",
-          changelogData?.elements?.find(
-            (e: any) => e.resourceName === "ugcPosts"
-          )
-        );
-      }
-
-      // Process MEMBER_SHARE_INFO snapshot data per DMA docs
-      if (snapshotData?.elements) {
-        const shareInfoElement = snapshotData.elements.find(
-          (e: any) => e.snapshotDomain === "MEMBER_SHARE_INFO"
-        );
-
-        if (shareInfoElement?.snapshotData) {
-          shareInfoElement.snapshotData.forEach((share: any, index: number) => {
-            // Extract using EXACT field names from DMA docs
-            const postUrl = share["Share URL"];
-            const shareDate = share["Share Date"];
-            const commentary = share["Share Commentary"];
-            const visibility = share["Visibility"] || "PUBLIC";
-            const mediaType = share["Media Type"] || "TEXT";
-            const likesCount = parseInt(share["Likes Count"] || "0");
-            const commentsCount = parseInt(share["Comments Count"] || "0");
-            const sharesCount = parseInt(share["Shares Count"] || "0");
-
-            if (!commentary && !postUrl) return;
-
-            const postId = postUrl
-              ? postUrl.match(/activity-(\d+)/)?.[1]
-                ? `urn:li:activity:${postUrl.match(/activity-(\d+)/)?.[1]}`
-                : postUrl
-              : `historical_${index}`;
-
-            // Convert Share Date properly (format: YYYY-MM-DD)
-            const createdTime = parsePostDate(shareDate);
-
-            if (createdTime < dateRange.from || createdTime > dateRange.to)
-              return;
-
-            const daysSincePosted = Math.floor(
-              (now - createdTime) / (24 * 60 * 60 * 1000)
-            );
-            const engagement = engagementMap.get(postId) || {
-              likes: 0,
-              comments: 0,
-              shares: 0,
-            };
-
-            processedPosts.push({
-              id: postId,
-              text: commentary || "Post content",
-              url: postUrl || `https://linkedin.com/feed/update/${postId}`,
-              timestamp: createdTime,
-              likes: engagement.likes || likesCount,
-              comments: engagement.comments || commentsCount,
-              shares: engagement.shares || sharesCount,
-              repurposeGrade:
-                engagement.likes + engagement.comments + engagement.shares > 5
-                  ? "red"
-                  : "blue",
-              media: share.media || null,
-              thumbnail: share["Media Thumbnail"] || undefined,
-              canRepost: daysSincePosted >= 30,
-              daysSincePosted,
-              resourceName: "ugcPosts",
-              visibility,
-              mediaType,
-            });
-          });
-        }
-      }
-
-      // Process changelog UGC posts per DMA docs
+      // PRIMARY: Process from changelog data (works for all account sizes)
       if (changelogData?.elements) {
-        const postEvents = changelogData.elements.filter(
-          (e: any) => e.resourceName === "ugcPosts"
-        );
+        console.log("Processing from changelog data...");
+        
+        const postEvents = changelogData.elements.filter(e => e.resourceName === "ugcPosts");
+        console.log("Found UGC posts in changelog:", postEvents.length);
+        
+        // Build engagement map first
+        const engagementMap: Record<string, { likes: number; comments: number; shares: number }> = {};
+        
+        changelogData.elements.forEach((event: any) => {
+          if (event.resourceName?.includes("socialActions")) {
+            const postUrn = event.activity?.object;
+            if (postUrn) {
+              if (!engagementMap[postUrn]) {
+                engagementMap[postUrn] = { likes: 0, comments: 0, shares: 0 };
+              }
+              
+              if (event.resourceName === "socialActions/likes" && event.method === "CREATE") {
+                engagementMap[postUrn].likes++;
+              } else if (event.resourceName === "socialActions/comments" && event.method === "CREATE") {
+                engagementMap[postUrn].comments++;
+              }
+            }
+          }
+        });
 
+        // Process each post
         postEvents.forEach((event: any) => {
-          const postId =
-            event.resourceId ||
-            event.id?.toString() ||
-            `changelog_${Date.now()}`;
-          const engagement = engagementMap.get(postId) || {
-            likes: 0,
-            comments: 0,
-            shares: 0,
-          };
+          try {
+            // Extract content from processedActivity first, then activity
+            const processedContent = event.processedActivity?.specificContent?.["com.linkedin.ugc.ShareContent"];
+            const activityContent = event.activity?.specificContent?.["com.linkedin.ugc.ShareContent"];
+            
+            const shareCommentary = processedContent?.shareCommentary?.text 
+              || activityContent?.shareCommentary?.text
+              || event.processedActivity?.text
+              || event.activity?.text
+              || "Post content from LinkedIn";
 
-          // capturedAt is epoch timestamp in milliseconds
-          if (
-            event.capturedAt < dateRange.from ||
-            event.capturedAt > dateRange.to
-          )
-            return;
-
-          // Use processedActivity for full context, fallback to activity
-          const content =
-            event.processedActivity?.specificContent?.[
-              "com.linkedin.ugc.ShareContent"
-            ]?.shareCommentary?.text ||
-            event.activity?.specificContent?.["com.linkedin.ugc.ShareContent"]
-              ?.shareCommentary?.text ||
-            "No content available";
-
-          const daysSincePosted = Math.floor(
-            (now - event.capturedAt) / (24 * 60 * 60 * 1000)
-          );
-
-          processedPosts.push({
-            id: postId,
-            text: content,
-            url: `https://linkedin.com/feed/update/${postId}`,
-            timestamp: event.capturedAt,
-            likes: engagement.likes,
-            comments: engagement.comments,
-            shares: engagement.shares,
-            repurposeGrade:
-              engagement.likes + engagement.comments + engagement.shares > 3
-                ? "red"
-                : "blue",
-            media:
-              event.activity?.specificContent?.["com.linkedin.ugc.ShareContent"]
-                ?.media?.[0] || null,
-            thumbnail: undefined,
-            canRepost: daysSincePosted >= 30,
-            daysSincePosted,
-            visibility: "PUBLIC",
-            mediaType: event.activity?.specificContent?.[
-              "com.linkedin.ugc.ShareContent"
-            ]?.media?.[0]
-              ? "IMAGE"
-              : "TEXT",
-          });
+            // Use capturedAt timestamp (epoch milliseconds)
+            const timestamp = event.capturedAt || event.processedAt || Date.now();
+            
+            // Calculate days since posted
+            const daysSincePosted = Math.floor((Date.now() - timestamp) / (24 * 60 * 60 * 1000));
+            
+            // Get engagement data
+            const postId = event.resourceId || event.id?.toString();
+            const engagement = engagementMap[postId] || { likes: 0, comments: 0, shares: 0 };
+            
+            // Filter by date range
+            if (timestamp >= dateRange.from && timestamp <= dateRange.to) {
+              processedPosts.push({
+                id: postId,
+                text: shareCommentary,
+                url: `https://linkedin.com/feed/update/${postId}`,
+                timestamp: timestamp,
+                likes: engagement.likes,
+                comments: engagement.comments,
+                shares: engagement.shares,
+                repurposeGrade: (engagement.likes + engagement.comments + engagement.shares) > 3 ? "red" : "blue",
+                media: processedContent?.media?.[0] || activityContent?.media?.[0] || null,
+                thumbnail: null,
+                canRepost: daysSincePosted >= 30,
+                daysSincePosted: daysSincePosted,
+                visibility: "PUBLIC",
+                mediaType: (processedContent?.media?.[0] || activityContent?.media?.[0]) ? "IMAGE" : "TEXT",
+              });
+            }
+          } catch (error) {
+            console.error("Error processing post event:", error, event);
+          }
         });
       }
 
-      // Process RICH_MEDIA domain for enhanced media data
-      if (richMediaData?.elements) {
-        const mediaElement = richMediaData.elements.find(
-          (e: any) => e.snapshotDomain === "RICH_MEDIA"
+      // SECONDARY: Try to process snapshot data if available (fallback)
+      if (snapshotData?.elements) {
+        console.log("Attempting to process snapshot data as fallback...");
+        
+        const shareInfoElement = snapshotData.elements.find(
+          e => e.snapshotDomain === "MEMBER_SHARE_INFO"
         );
-
-        if (mediaElement?.snapshotData && debugMode) {
-          console.log(
-            "RICH_MEDIA data available:",
-            mediaElement.snapshotData.length,
-            "items"
-          );
-          console.log("Sample media item:", mediaElement.snapshotData[0]);
+        
+        if (shareInfoElement?.snapshotData && Array.isArray(shareInfoElement.snapshotData)) {
+          console.log("Found snapshot data:", shareInfoElement.snapshotData.length, "items");
+          
+          shareInfoElement.snapshotData.forEach((share: any, index: number) => {
+            try {
+              const postUrl = share["Share URL"] || share.shareUrl || share.url;
+              const shareDate = share["Share Date"] || share.shareDate || share.date;
+              const commentary = share["Share Commentary"] || share.shareCommentary || share.commentary;
+              
+              if (commentary || postUrl) {
+                const timestamp = shareDate ? new Date(shareDate).getTime() : Date.now() - (index * 24 * 60 * 60 * 1000);
+                const daysSincePosted = Math.floor((Date.now() - timestamp) / (24 * 60 * 60 * 1000));
+                
+                if (timestamp >= dateRange.from && timestamp <= dateRange.to) {
+                  const postId = postUrl?.match(/activity-(\d+)/) 
+                    ? `urn:li:activity:${postUrl.match(/activity-(\d+)/)?.[1]}`
+                    : `historical_${index}`;
+                  
+                  // Check if this post is already in processedPosts from changelog
+                  const existingPost = processedPosts.find(p => p.id === postId || p.text === commentary);
+                  if (!existingPost) {
+                    processedPosts.push({
+                      id: postId,
+                      text: commentary,
+                      url: postUrl || `https://linkedin.com/feed/update/${postId}`,
+                      timestamp: timestamp,
+                      likes: parseInt(share["Likes Count"] || "0") || 0,
+                      comments: parseInt(share["Comments Count"] || "0") || 0,
+                      shares: parseInt(share["Shares Count"] || "0") || 0,
+                      repurposeGrade: "blue",
+                      media: null,
+                      thumbnail: share["Media Thumbnail"] || null,
+                      canRepost: daysSincePosted >= 30,
+                      daysSincePosted: daysSincePosted,
+                      visibility: share.Visibility || "PUBLIC",
+                      mediaType: share["Media Type"] || "TEXT",
+                    });
+                  }
+                }
+              }
+            } catch (error) {
+              console.error("Error processing snapshot share:", error, share);
+            }
+          });
         }
       }
 
-      const uniquePosts = processedPosts.filter(
-        (post, index, self) => index === self.findIndex((p) => p.id === post.id)
-      );
+      console.log("=== PROCESSING SUMMARY ===");
+      console.log("Total processed posts:", processedPosts.length);
+      console.log("Date range:", new Date(dateRange.from).toDateString(), "to", new Date(dateRange.to).toDateString());
+      console.log("Posts in date range:", processedPosts.length);
+      
+      // Return sorted posts, limited to reasonable number for UI performance
+      return processedPosts
+        .sort((a, b) => b.timestamp - a.timestamp)
+        .slice(0, 100); // Limit to 100 most recent posts for performance
 
-      if (debugMode) {
-        console.log("Final processed posts:", uniquePosts.length);
-        console.log("Sample post:", uniquePosts[0]);
-      }
-
-      return uniquePosts.sort((a, b) => b.timestamp - a.timestamp).slice(0, 50);
     } catch (error) {
-      console.error("Error processing posts:", error);
+      console.error("Critical error in post processing:", error);
       return [];
     }
-  }, [snapshotData, changelogData, engagementMap, dateRange, debugMode]);
+  }, [snapshotData, changelogData, dateRange]);
 
   const filteredPosts = posts.filter((post) =>
     post.text.toLowerCase().includes(searchTerm.toLowerCase())
@@ -418,6 +392,8 @@ export const PostPulse = () => {
         <div className="text-center">
           <LoadingSpinner size="lg" />
           <p className="mt-4 text-gray-600">Loading your LinkedIn posts...</p>
+          {changelogLoading && <p className="text-sm text-gray-500">Fetching recent activity...</p>}
+          {snapshotLoading && <p className="text-sm text-gray-500">Loading post history...</p>}
         </div>
       </motion.div>
     );
@@ -489,6 +465,18 @@ export const PostPulse = () => {
           </Button>
         </div>
       </div>
+
+      {/* High-Volume Account Indicator */}
+      {changelogData?.elements?.length > 50 && !snapshotData?.elements && (
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-center">
+            <Eye size={16} className="text-blue-600 mr-2" />
+            <span className="text-sm text-blue-800">
+              High-volume account detected. Showing recent posts from activity feed.
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Debug Information */}
       {debugMode && (
