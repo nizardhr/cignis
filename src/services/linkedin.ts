@@ -36,10 +36,21 @@ export const fetchLinkedInChangelog = async (
   return response.json();
 };
 
-export const fetchLinkedInSnapshot = async (token: string, domain?: string) => {
+export const fetchLinkedInSnapshot = async (
+  token: string,
+  domain?: string,
+  start?: number,
+  count?: number
+) => {
   const params = new URLSearchParams();
   if (domain) {
     params.append("domain", domain);
+  }
+  if (start !== undefined) {
+    params.append("start", start.toString());
+  }
+  if (count !== undefined) {
+    params.append("count", count.toString());
   }
 
   const response = await fetch(`${API_BASE}/linkedin-snapshot?${params}`, {
@@ -51,6 +62,36 @@ export const fetchLinkedInSnapshot = async (token: string, domain?: string) => {
 
   if (!response.ok) {
     throw new Error("Failed to fetch LinkedIn snapshot");
+  }
+
+  return response.json();
+};
+
+export const fetchLinkedInHistoricalPosts = async (
+  token: string,
+  daysBack: number = 90,
+  start: number = 0,
+  count: number = 10
+) => {
+  const params = new URLSearchParams({
+    domain: "MEMBER_SHARE_INFO",
+    start: start.toString(),
+    count: count.toString(),
+    daysBack: daysBack.toString(),
+  });
+
+  const response = await fetch(
+    `${API_BASE}/linkedin-historical-posts?${params}`,
+    {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "LinkedIn-Version": "202312",
+      },
+    }
+  );
+
+  if (!response.ok) {
+    throw new Error("Failed to fetch LinkedIn historical posts");
   }
 
   return response.json();

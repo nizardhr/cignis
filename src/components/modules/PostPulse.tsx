@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from "react";
+import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   Search,
@@ -13,374 +13,47 @@ import {
   Eye,
   Calendar,
   ChevronDown,
+  Database,
+  AlertCircle,
 } from "lucide-react";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
-import {
-  useLinkedInSnapshot,
-  useLinkedInChangelog,
-  useLinkedInMultipleSnapshots,
-} from "../../hooks/useLinkedInData";
 import { LoadingSpinner } from "../ui/LoadingSpinner";
+import { Pagination } from "../ui/Pagination";
+import { CacheStatusIndicator } from "../ui/CacheStatusIndicator";
+import { usePostPulseData } from "../../hooks/usePostPulseData";
 import { useAppStore } from "../../stores/appStore";
-
-interface ProcessedPost {
-  id: string;
-  text: string;
-  url: string;
-  timestamp: number;
-  likes: number;
-  comments: number;
-  shares: number;
-  repurposeGrade: "red" | "blue";
-  media?: any;
-  thumbnail?: string;
-  canRepost: boolean;
-  daysSincePosted: number;
-  resourceName?: string;
-  visibility?: string;
-  mediaType?: string;
-}
+import { PostPulseCache } from "../../services/postpulse-cache";
+import { ProcessedPost } from "../../services/postpulse-cache";
 
 export const PostPulse = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedPosts, setSelectedPosts] = useState<string[]>([]);
-  const [timeFilter, setTimeFilter] = useState<"7d" | "30d" | "90d">("90d");
+  const [timeFilter, setTimeFilter] = useState<"7d" | "30d" | "90d">("7d");
   const [debugMode, setDebugMode] = useState(false);
-  const [displayedPosts, setDisplayedPosts] = useState(15);
+  const [currentPage, setCurrentPage] = useState(1);
   const { setCurrentModule } = useAppStore();
 
-  const { data: snapshotData, isLoading: snapshotLoading } =
-    useLinkedInSnapshot("MEMBER_SHARE_INFO");
-  const { data: richMediaData, isLoading: richMediaLoading } =
-    useLinkedInSnapshot("RICH_MEDIA");
-  const { data: changelogData, isLoading: changelogLoading } =
-    useLinkedInChangelog(100);
+  // Use the enhanced data hook
+  const {
+    posts,
+    isLoading,
+    isInitialLoading,
+    isRefetching,
+    error,
+    cacheStatus,
+    pagination,
+    dataSources,
+  } = usePostPulseData({
+    timeFilter,
+    searchTerm,
+    page: currentPage,
+    pageSize: 12,
+  });
 
-  // Account type detection
-  useEffect(() => {
-    if (changelogData || snapshotData) {
-      console.log("=== ACCOUNT ANALYSIS ===");
-      console.log("Changelog available:", !!changelogData?.elements);
-      console.log("Changelog elements:", changelogData?.elements?.length);
-      console.log("Snapshot available:", !!snapshotData?.elements);
-      console.log(
-        "Account type:",
-        changelogData?.elements?.length > 50 ? "HIGH_VOLUME" : "NORMAL"
-      );
-
-      if (changelogData?.elements) {
-        const resourceTypes = changelogData.elements.reduce(
-          (acc: any, el: any) => {
-            acc[el.resourceName] = (acc[el.resourceName] || 0) + 1;
-            return acc;
-          },
-          {}
-        );
-        console.log("Resource types in changelog:", resourceTypes);
-      }
-    }
-  }, [changelogData, snapshotData]);
-
-  // Optimized date range calculation with memoization
-  const dateRange = useMemo(() => {
-    const now = Date.now();
-    const dayMs = 24 * 60 * 60 * 1000;
-    const periods = { "7d": 7, "30d": 30, "90d": 90 };
-
-    return { from: now - (periods[timeFilter] || 90) * dayMs, to: now };
-  }, [timeFilter]);
-
-  // DMA-compliant data extraction helper
-  const extractData = (obj: any, keys: string[], fallback: any = "") => {
-    if (!obj || typeof obj !== "object") return fallback;
-    return (
-      keys.find((key) => obj[key] !== undefined && obj[key] !== null) ||
-      fallback
-    );
-  };
-
-  // Handle both epoch timestamps and date strings per DMA docs
-  const parsePostDate = (dateInput: any): number => {
-    if (typeof dateInput === "number") {
-      // Epoch timestamp (from changelog)
-      return dateInput;
-    }
-
-    if (typeof dateInput === "string") {
-      // Date string from snapshot (format: YYYY-MM-DD)
-      const date = new Date(dateInput);
-      return !isNaN(date.getTime()) ? date.getTime() : Date.now();
-    }
-
-    // Fallback
-    return Date.now();
-  };
-
-  // Build engagement map from changelog per DMA docs
-  const engagementMap = useMemo(() => {
-    if (!changelogData?.elements) return new Map();
-
-    const map = new Map<
-      string,
-      { likes: number; comments: number; shares: number }
-    >();
-
-    changelogData.elements.forEach((event: any) => {
-      if (event.method !== "CREATE") return;
-
-      // The object field contains the post URN for social actions
-      const postUrn = event.activity?.object;
-      if (!postUrn) return;
-
-      if (!map.has(postUrn)) {
-        map.set(postUrn, { likes: 0, comments: 0, shares: 0 });
-      }
-
-      const current = map.get(postUrn)!;
-
-      if (event.resourceName === "socialActions/likes") {
-        current.likes++;
-      } else if (event.resourceName === "socialActions/comments") {
-        current.comments++;
-      } else if (event.resourceName === "socialActions/shares") {
-        current.shares++;
-      }
-    });
-
-    return map;
-  }, [changelogData]);
-
-  // Robust data processing for high-volume accounts
-  const posts = useMemo(() => {
-    console.log("=== SNAPSHOT PROCESSING DEBUG ===");
-    console.log("Raw snapshot data:", snapshotData);
-    console.log(
-      "Snapshot structure:",
-      snapshotData ? Object.keys(snapshotData) : "No data"
-    );
-
-    if (!changelogData?.elements) {
-      console.log("No changelog data available");
-      return [];
-    }
-
-    const processedPosts: ProcessedPost[] = [];
-
-    try {
-      // PRIMARY: Process from changelog data (works for all account sizes)
-      if (changelogData?.elements) {
-        console.log("Processing from changelog data...");
-
-        const postEvents = changelogData.elements.filter(
-          (e) => e.resourceName === "ugcPosts"
-        );
-        console.log("Found UGC posts in changelog:", postEvents.length);
-
-        // Build engagement map first
-        const engagementMap: Record<
-          string,
-          { likes: number; comments: number; shares: number }
-        > = {};
-
-        changelogData.elements.forEach((event: any) => {
-          if (event.resourceName?.includes("socialActions")) {
-            const postUrn = event.activity?.object;
-            if (postUrn) {
-              if (!engagementMap[postUrn]) {
-                engagementMap[postUrn] = { likes: 0, comments: 0, shares: 0 };
-              }
-
-              if (
-                event.resourceName === "socialActions/likes" &&
-                event.method === "CREATE"
-              ) {
-                engagementMap[postUrn].likes++;
-              } else if (
-                event.resourceName === "socialActions/comments" &&
-                event.method === "CREATE"
-              ) {
-                engagementMap[postUrn].comments++;
-              }
-            }
-          }
-        });
-
-        // Process each post
-        postEvents.forEach((event: any) => {
-          try {
-            // Extract content from processedActivity first, then activity
-            const processedContent =
-              event.processedActivity?.specificContent?.[
-                "com.linkedin.ugc.ShareContent"
-              ];
-            const activityContent =
-              event.activity?.specificContent?.[
-                "com.linkedin.ugc.ShareContent"
-              ];
-
-            const shareCommentary =
-              processedContent?.shareCommentary?.text ||
-              activityContent?.shareCommentary?.text ||
-              event.processedActivity?.text ||
-              event.activity?.text ||
-              "Post content from LinkedIn";
-
-            // Use capturedAt timestamp (epoch milliseconds)
-            const timestamp =
-              event.capturedAt || event.processedAt || Date.now();
-
-            // Calculate days since posted
-            const daysSincePosted = Math.floor(
-              (Date.now() - timestamp) / (24 * 60 * 60 * 1000)
-            );
-
-            // Get engagement data
-            const postId = event.resourceId || event.id?.toString();
-            const engagement = engagementMap[postId] || {
-              likes: 0,
-              comments: 0,
-              shares: 0,
-            };
-
-            // Filter by date range
-            if (timestamp >= dateRange.from && timestamp <= dateRange.to) {
-              processedPosts.push({
-                id: postId,
-                text: shareCommentary,
-                url: `https://linkedin.com/feed/update/${postId}`,
-                timestamp: timestamp,
-                likes: engagement.likes,
-                comments: engagement.comments,
-                shares: engagement.shares,
-                repurposeGrade:
-                  engagement.likes + engagement.comments + engagement.shares > 3
-                    ? "red"
-                    : "blue",
-                media:
-                  processedContent?.media?.[0] ||
-                  activityContent?.media?.[0] ||
-                  null,
-                thumbnail: null,
-                canRepost: daysSincePosted >= 30,
-                daysSincePosted: daysSincePosted,
-                visibility: "PUBLIC",
-                mediaType:
-                  processedContent?.media?.[0] || activityContent?.media?.[0]
-                    ? "IMAGE"
-                    : "TEXT",
-              });
-            }
-          } catch (error) {
-            console.error("Error processing post event:", error, event);
-          }
-        });
-      }
-
-      // SECONDARY: Try to process snapshot data if available (fallback)
-      if (snapshotData?.elements) {
-        console.log("Attempting to process snapshot data as fallback...");
-
-        const shareInfoElement = snapshotData.elements.find(
-          (e) => e.snapshotDomain === "MEMBER_SHARE_INFO"
-        );
-
-        if (
-          shareInfoElement?.snapshotData &&
-          Array.isArray(shareInfoElement.snapshotData)
-        ) {
-          console.log(
-            "Found snapshot data:",
-            shareInfoElement.snapshotData.length,
-            "items"
-          );
-
-          shareInfoElement.snapshotData.forEach((share: any, index: number) => {
-            try {
-              const postUrl = share["Share URL"] || share.shareUrl || share.url;
-              const shareDate =
-                share["Share Date"] || share.shareDate || share.date;
-              const commentary =
-                share["Share Commentary"] ||
-                share.shareCommentary ||
-                share.commentary;
-
-              if (commentary || postUrl) {
-                const timestamp = shareDate
-                  ? new Date(shareDate).getTime()
-                  : Date.now() - index * 24 * 60 * 60 * 1000;
-                const daysSincePosted = Math.floor(
-                  (Date.now() - timestamp) / (24 * 60 * 60 * 1000)
-                );
-
-                if (timestamp >= dateRange.from && timestamp <= dateRange.to) {
-                  const postId = postUrl?.match(/activity-(\d+)/)
-                    ? `urn:li:activity:${postUrl.match(/activity-(\d+)/)?.[1]}`
-                    : `historical_${index}`;
-
-                  // Check if this post is already in processedPosts from changelog
-                  const existingPost = processedPosts.find(
-                    (p) => p.id === postId || p.text === commentary
-                  );
-                  if (!existingPost) {
-                    processedPosts.push({
-                      id: postId,
-                      text: commentary,
-                      url:
-                        postUrl || `https://linkedin.com/feed/update/${postId}`,
-                      timestamp: timestamp,
-                      likes: parseInt(share["Likes Count"] || "0") || 0,
-                      comments: parseInt(share["Comments Count"] || "0") || 0,
-                      shares: parseInt(share["Shares Count"] || "0") || 0,
-                      repurposeGrade: "blue",
-                      media: null,
-                      thumbnail: share["Media Thumbnail"] || null,
-                      canRepost: daysSincePosted >= 30,
-                      daysSincePosted: daysSincePosted,
-                      visibility: share.Visibility || "PUBLIC",
-                      mediaType: share["Media Type"] || "TEXT",
-                    });
-                  }
-                }
-              }
-            } catch (error) {
-              console.error("Error processing snapshot share:", error, share);
-            }
-          });
-        }
-      }
-
-      console.log("=== PROCESSING SUMMARY ===");
-      console.log("Total processed posts:", processedPosts.length);
-      console.log(
-        "Date range:",
-        new Date(dateRange.from).toDateString(),
-        "to",
-        new Date(dateRange.to).toDateString()
-      );
-      console.log("Posts in date range:", processedPosts.length);
-
-      // Return sorted posts, limited to reasonable number for UI performance
-      return processedPosts
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 100); // Limit to 100 most recent posts for performance
-    } catch (error) {
-      console.error("Critical error in post processing:", error);
-      return [];
-    }
-  }, [snapshotData, changelogData, dateRange]);
-
-  const filteredPosts = posts.filter((post) =>
-    post.text.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  // Reset displayed posts when filter changes
-  useEffect(() => {
-    setDisplayedPosts(15);
-  }, [timeFilter, searchTerm]);
-
-  const loadMorePosts = () => {
-    setDisplayedPosts((prev) => prev + 15);
+  const handleRefresh = () => {
+    PostPulseCache.clearCache();
+    window.location.reload();
   };
 
   const togglePostSelection = (postId: string) => {
@@ -445,7 +118,24 @@ export const PostPulse = () => {
     return text.substr(0, maxLength) + "...";
   };
 
-  if (snapshotLoading || changelogLoading || richMediaLoading) {
+  const handlePageChange = (page: number) => {
+    setCurrentPage(page);
+    // Scroll to top when page changes
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  // Reset to page 1 when filters change
+  const handleTimeFilterChange = (filter: "7d" | "30d" | "90d") => {
+    setTimeFilter(filter);
+    setCurrentPage(1);
+  };
+
+  const handleSearchChange = (term: string) => {
+    setSearchTerm(term);
+    setCurrentPage(1);
+  };
+
+  if (isInitialLoading) {
     return (
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -456,24 +146,14 @@ export const PostPulse = () => {
         <div className="text-center">
           <LoadingSpinner size="lg" />
           <p className="mt-4 text-gray-600">Loading your LinkedIn posts...</p>
-          {changelogLoading && (
-            <p className="text-sm text-gray-500">Fetching recent activity...</p>
-          )}
-          {snapshotLoading && (
-            <p className="text-sm text-gray-500">Loading post history...</p>
-          )}
+          <p className="text-sm text-gray-500">Fetching historical data...</p>
         </div>
       </motion.div>
     );
   }
 
-  // Show error state if both data sources failed
-  if (
-    !snapshotLoading &&
-    !changelogLoading &&
-    !snapshotData &&
-    !changelogData
-  ) {
+  // Show error state if data fetching failed
+  if (error && posts.length === 0) {
     return (
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -481,28 +161,21 @@ export const PostPulse = () => {
         transition={{ duration: 0.5 }}
         className="text-center py-12"
       >
-        <Calendar size={48} className="mx-auto text-gray-400 mb-4" />
+        <AlertCircle size={48} className="mx-auto text-red-400 mb-4" />
         <h3 className="text-lg font-semibold text-gray-900 mb-2">
-          No Posts Available
+          Error Loading Posts
         </h3>
         <p className="text-gray-600 mb-4">
-          We couldn't load your LinkedIn posts. This might be because:
+          We encountered an error while loading your LinkedIn posts:
         </p>
-        <ul className="text-sm text-gray-500 space-y-1 mb-6">
-          <li>• You haven't posted on LinkedIn yet</li>
-          <li>• Your posts are not accessible via the API</li>
-          <li>• There's a temporary connection issue</li>
-        </ul>
-        <Button variant="primary" onClick={() => window.location.reload()}>
+        <p className="text-sm text-red-600 mb-6">{error.message}</p>
+        <Button variant="primary" onClick={handleRefresh}>
           <RefreshCw size={16} className="mr-2" />
           Try Again
         </Button>
       </motion.div>
     );
   }
-
-  const postsToShow = filteredPosts.slice(0, displayedPosts);
-  const hasMorePosts = displayedPosts < filteredPosts.length;
 
   return (
     <motion.div
@@ -526,8 +199,15 @@ export const PostPulse = () => {
           >
             {debugMode ? "Hide Debug" : "Debug Mode"}
           </Button>
-          <Button variant="outline">
-            <RefreshCw size={16} className="mr-2" />
+          <Button
+            variant="outline"
+            onClick={handleRefresh}
+            disabled={isRefetching}
+          >
+            <RefreshCw
+              size={16}
+              className={`mr-2 ${isRefetching ? "animate-spin" : ""}`}
+            />
             Refresh
           </Button>
           <Button variant="primary" disabled={selectedPosts.length === 0}>
@@ -537,39 +217,35 @@ export const PostPulse = () => {
         </div>
       </div>
 
-      {/* High-Volume Account Indicator */}
-      {changelogData?.elements?.length > 50 && !snapshotData?.elements && (
-        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
-          <div className="flex items-center">
-            <Eye size={16} className="text-blue-600 mr-2" />
-            <span className="text-sm text-blue-800">
-              High-volume account detected. Showing recent posts from activity
-              feed.
-            </span>
-          </div>
-        </div>
-      )}
+      {/* Cache Status Indicator */}
+      <Card variant="glass" className="p-4">
+        <CacheStatusIndicator
+          cacheStatus={cacheStatus}
+          dataSources={dataSources}
+          isRefetching={isRefetching}
+          onRefresh={handleRefresh}
+        />
+      </Card>
 
       {/* Debug Information */}
       {debugMode && (
         <Card variant="glass" className="p-4 bg-yellow-50">
           <h3 className="font-semibold mb-2">Debug Information:</h3>
           <div className="text-sm space-y-1">
+            <div>Total Posts: {pagination.totalPosts}</div>
             <div>
-              Snapshot Data: {snapshotData?.elements?.length || 0} elements
+              Current Page: {pagination.currentPage} of {pagination.totalPages}
             </div>
+            <div>Posts on Page: {posts.length}</div>
+            <div>Time Filter: {timeFilter}</div>
+            <div>Search Term: {searchTerm || "None"}</div>
+            <div>Cache Status: {cacheStatus.exists ? "Exists" : "None"}</div>
             <div>
-              Changelog Data: {changelogData?.elements?.length || 0} elements
-            </div>
-            <div>
-              Rich Media Data: {richMediaData?.elements?.length || 0} elements
-            </div>
-            <div>Processed Posts: {posts.length}</div>
-            <div>Filtered Posts: {filteredPosts.length}</div>
-            <div>Displayed Posts: {postsToShow.length}</div>
-            <div>
-              Date Range: {new Date(dateRange.from).toLocaleDateString()} -{" "}
-              {new Date(dateRange.to).toLocaleDateString()}
+              Data Sources:{" "}
+              {Object.entries(dataSources)
+                .filter(([_, v]) => v)
+                .map(([k]) => k)
+                .join(", ")}
             </div>
           </div>
         </Card>
@@ -587,7 +263,7 @@ export const PostPulse = () => {
               type="text"
               placeholder="Search your posts..."
               value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
               className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
@@ -595,7 +271,7 @@ export const PostPulse = () => {
             {(["7d", "30d", "90d"] as const).map((period) => (
               <button
                 key={period}
-                onClick={() => setTimeFilter(period)}
+                onClick={() => handleTimeFilterChange(period)}
                 className={`px-4 py-2 rounded-lg font-medium transition-colors ${
                   timeFilter === period
                     ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white"
@@ -609,14 +285,22 @@ export const PostPulse = () => {
         </div>
       </Card>
 
+      {/* Loading State */}
+      {isRefetching && (
+        <div className="flex items-center justify-center py-4">
+          <LoadingSpinner size="md" />
+          <span className="ml-2 text-gray-600">Updating posts...</span>
+        </div>
+      )}
+
       {/* Posts Grid */}
-      {postsToShow.length === 0 ? (
+      {posts.length === 0 ? (
         <Card variant="glass" className="p-8 text-center">
           <div className="text-gray-500">
             <Calendar size={48} className="mx-auto mb-4 text-gray-300" />
             <h3 className="text-lg font-medium mb-2">No posts found</h3>
             <p className="text-sm">
-              {posts.length === 0
+              {pagination.totalPosts === 0
                 ? "No posts found in the selected date range. Try adjusting your time filter."
                 : "No posts match your search criteria. Try a different search term."}
             </p>
@@ -625,7 +309,7 @@ export const PostPulse = () => {
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {postsToShow.map((post, index) => {
+            {posts.map((post, index) => {
               const status = getPostStatus(post);
               const StatusIcon = status.icon;
 
@@ -646,6 +330,19 @@ export const PostPulse = () => {
                         : "hover:shadow-lg hover:border-gray-300"
                     }`}
                   >
+                    {/* Source Indicator */}
+                    <div className="absolute top-4 left-4">
+                      <div
+                        className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          post.source === "historical"
+                            ? "bg-purple-100 text-purple-800"
+                            : "bg-green-100 text-green-800"
+                        }`}
+                      >
+                        {post.source === "historical" ? "Historical" : "Recent"}
+                      </div>
+                    </div>
+
                     {/* Status Badge */}
                     <div
                       className={`absolute top-4 right-4 px-2 py-1 rounded-full text-xs font-medium flex items-center space-x-1 ${status.color}`}
@@ -776,25 +473,19 @@ export const PostPulse = () => {
             })}
           </div>
 
-          {/* Load More Button */}
-          {hasMorePosts && (
-            <div className="flex justify-center mt-8">
-              <Button
-                variant="outline"
-                onClick={loadMorePosts}
-                className="px-8 py-3 text-lg"
-              >
-                <ChevronDown size={20} className="mr-2" />
-                Load More Posts ({filteredPosts.length - displayedPosts}{" "}
-                remaining)
-              </Button>
-            </div>
-          )}
+          {/* Pagination */}
+          <Pagination
+            currentPage={pagination.currentPage}
+            totalPages={pagination.totalPages}
+            onPageChange={handlePageChange}
+            className="mt-8"
+          />
 
           {/* Posts Summary */}
           <div className="text-center text-sm text-gray-500 mt-4">
-            Showing {postsToShow.length} of {filteredPosts.length} posts from
-            the last {timeFilter}
+            Showing {posts.length} of {pagination.totalPosts} posts from the
+            last {timeFilter} • Page {pagination.currentPage} of{" "}
+            {pagination.totalPages}
           </div>
         </>
       )}

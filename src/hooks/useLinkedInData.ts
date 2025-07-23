@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query';
-import { fetchLinkedInChangelog, fetchLinkedInSnapshot, fetchLinkedInProfile } from '../services/linkedin';
+import { useQuery, useInfiniteQuery } from '@tanstack/react-query';
+import { fetchLinkedInChangelog, fetchLinkedInSnapshot, fetchLinkedInProfile, fetchLinkedInHistoricalPosts } from '../services/linkedin';
 import { useAuthStore } from '../stores/authStore';
 
 export const useLinkedInProfile = () => {
@@ -57,6 +57,29 @@ export const useLinkedInMultipleSnapshots = (domains: string[]) => {
     enabled: !!dmaToken && domains.length > 0,
     staleTime: 15 * 60 * 1000,
     retry: 1,
+    refetchOnWindowFocus: false,
+  });
+};
+
+export const useLinkedInHistoricalPosts = (daysBack: number = 90) => {
+  const { dmaToken } = useAuthStore();
+  
+  return useInfiniteQuery({
+    queryKey: ['linkedin-historical-posts', daysBack],
+    queryFn: async ({ pageParam = 0 }) => {
+      return fetchLinkedInHistoricalPosts(dmaToken!, daysBack, pageParam, 10);
+    },
+    getNextPageParam: (lastPage, allPages) => {
+      const currentStart = allPages.length * 10;
+      if (lastPage.paging?.hasMore && currentStart < (lastPage.paging?.total || 0)) {
+        return currentStart;
+      }
+      return undefined;
+    },
+    enabled: !!dmaToken,
+    staleTime: 60 * 60 * 1000, // 1 hour
+    gcTime: 24 * 60 * 60 * 1000, // 24 hours
+    retry: 2,
     refetchOnWindowFocus: false,
   });
 };
