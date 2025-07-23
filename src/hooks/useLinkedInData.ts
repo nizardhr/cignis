@@ -13,14 +13,16 @@ export const useLinkedInProfile = () => {
   });
 };
 
-export const useLinkedInChangelog = (startTime?: number) => {
+export const useLinkedInChangelog = (count: number = 50) => {
   const { dmaToken } = useAuthStore();
   
   return useQuery({
-    queryKey: ['linkedin-changelog', startTime],
-    queryFn: () => fetchLinkedInChangelog(dmaToken!, startTime),
+    queryKey: ['linkedin-changelog', count],
+    queryFn: () => fetchLinkedInChangelog(dmaToken!, count),
     enabled: !!dmaToken,
-    staleTime: 2 * 60 * 1000, // 2 minutes
+    staleTime: 5 * 60 * 1000,
+    retry: 1,
+    refetchOnWindowFocus: false,
   });
 };
 
@@ -31,7 +33,29 @@ export const useLinkedInSnapshot = (domain?: string) => {
     queryKey: ['linkedin-snapshot', domain],
     queryFn: () => fetchLinkedInSnapshot(dmaToken!, domain),
     enabled: !!dmaToken,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 15 * 60 * 1000,
+    gcTime: 60 * 60 * 1000,
+    retry: 1,
+    refetchOnWindowFocus: false,
+  });
+};
+
+export const useLinkedInMultipleSnapshots = (domains: string[]) => {
+  const { dmaToken } = useAuthStore();
+  
+  return useQuery({
+    queryKey: ['linkedin-multiple-snapshots', domains],
+    queryFn: async () => {
+      const results = await Promise.all(
+        domains.map(domain => fetchLinkedInSnapshot(dmaToken!, domain))
+      );
+      return results.reduce((acc, result, index) => {
+        acc[domains[index]] = result;
+        return acc;
+      }, {} as Record<string, any>);
+    },
+    enabled: !!dmaToken && domains.length > 0,
+    staleTime: 15 * 60 * 1000,
     retry: 1,
     refetchOnWindowFocus: false,
   });

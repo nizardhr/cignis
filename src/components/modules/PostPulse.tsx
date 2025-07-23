@@ -18,6 +18,7 @@ import { Button } from "../ui/Button";
 import {
   useLinkedInSnapshot,
   useLinkedInChangelog,
+  useLinkedInMultipleSnapshots,
 } from "../../hooks/useLinkedInData";
 import { LoadingSpinner } from "../ui/LoadingSpinner";
 import { useAppStore } from "../../stores/appStore";
@@ -47,12 +48,15 @@ export const PostPulse = () => {
     "7d" | "30d" | "90d" | "365d" | "custom"
   >("30d");
   const [customDates, setCustomDates] = useState({ from: "", to: "" });
+  const [debugMode, setDebugMode] = useState(false);
   const { setCurrentModule } = useAppStore();
 
   const { data: snapshotData, isLoading: snapshotLoading } =
     useLinkedInSnapshot("MEMBER_SHARE_INFO");
+  const { data: richMediaData, isLoading: richMediaLoading } =
+    useLinkedInSnapshot("RICH_MEDIA");
   const { data: changelogData, isLoading: changelogLoading } =
-    useLinkedInChangelog();
+    useLinkedInChangelog(100);
 
   // Optimized date range calculation with memoization
   const dateRange = useMemo(() => {
@@ -72,112 +76,209 @@ export const PostPulse = () => {
     return { from: now - (periods[timeFilter] || 30) * dayMs, to: now };
   }, [timeFilter, customDates.from, customDates.to]);
 
+  // Robust data extraction helper
+  const extractData = (obj: any, keys: string[], fallback: any = "") => {
+    if (!obj || typeof obj !== "object") return fallback;
+    return (
+      keys.find((key) => obj[key] !== undefined && obj[key] !== null) ||
+      fallback
+    );
+  };
+
+  // Parse date with fallback
+  const parseDate = (dateValue: any, fallback: number): number => {
+    if (!dateValue) return fallback;
+    try {
+      const date = new Date(dateValue);
+      return !isNaN(date.getTime()) ? date.getTime() : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+
+  // Build engagement map from changelog
+  const engagementMap = useMemo(() => {
+    if (!changelogData?.elements) return new Map();
+
+    const map = new Map<
+      string,
+      { likes: number; comments: number; shares: number }
+    >();
+
+    changelogData.elements.forEach((event: any) => {
+      if (event.method !== "CREATE") return;
+
+      const postUrn = event.activity?.object || event.resourceId;
+      if (!postUrn) return;
+
+      const current = map.get(postUrn) || { likes: 0, comments: 0, shares: 0 };
+
+      switch (event.resourceName) {
+        case "socialActions/likes":
+          current.likes++;
+          break;
+        case "socialActions/comments":
+          current.comments++;
+          break;
+        case "socialActions/shares":
+          current.shares++;
+          break;
+      }
+
+      map.set(postUrn, current);
+    });
+
+    return map;
+  }, [changelogData]);
+
   // Optimized data processing
   const posts = useMemo(() => {
     if (!snapshotData?.elements && !changelogData?.elements) return [];
 
     const processedPosts: ProcessedPost[] = [];
-    
-    // Helper function to extract data safely
-    const extract = (obj: any, keys: string[], fallback = "") => 
-      keys.find(key => obj[key]) || fallback;
+    const now = Date.now();
 
     try {
       // Process snapshot data
       if (snapshotData?.elements) {
-        const historicalShares = snapshotData.elements.find(
-          e => e.snapshotDomain === "MEMBER_SHARE_INFO"
-        )?.snapshotData || [];
+        const historicalShares =
+          snapshotData.elements.find(
+            (e: any) => e.snapshotDomain === "MEMBER_SHARE_INFO"
+          )?.snapshotData || [];
 
         historicalShares.forEach((share: any, index: number) => {
-          const postUrl = extract(share, ["Share URL", "shareUrl", "url", "URL"]);
-          const shareDate = extract(share, ["Share Date", "shareDate", "date", "Date"]);
-          const commentary = extract(share, ["Share Commentary", "shareCommentary", "commentary", "Commentary", "text"]);
-          const visibility = extract(share, ["Visibility", "visibility"], "PUBLIC");
-          const mediaType = extract(share, ["Media Type", "mediaType"], "TEXT");
-          const thumbnail = extract(share, ["Media Thumbnail", "thumbnail", "Thumbnail URL"], null);
+          const postUrl = extractData(share, [
+            "Share URL",
+            "shareUrl",
+            "url",
+            "URL",
+          ]);
+          const shareDate = extractData(share, [
+            "Share Date",
+            "shareDate",
+            "date",
+            "Date",
+          ]);
+          const commentary = extractData(share, [
+            "Share Commentary",
+            "shareCommentary",
+            "commentary",
+            "Commentary",
+            "text",
+          ]);
+          const visibility = extractData(
+            share,
+            ["Visibility", "visibility"],
+            "PUBLIC"
+          );
+          const mediaType = extractData(
+            share,
+            ["Media Type", "mediaType"],
+            "TEXT"
+          );
+          const thumbnail = extractData(share, [
+            "Media Thumbnail",
+            "thumbnail",
+            "Thumbnail URL",
+          ]);
 
-            // Only process if we have essential data
-            if (postUrl || commentary) {
-              const postId = postUrl.match(/activity-(\d+)/)
-                ? `urn:li:activity:${postUrl.match(/activity-(\d+)/)?.[1]}`
-                : `historical_${index}`;
-              const createdTime = shareDate
-                ? new Date(shareDate).getTime()
-                : Date.now() - index * 24 * 60 * 60 * 1000;
+          if (!commentary && !postUrl) return;
 
-              // Filter by date range
-              if (createdTime < dateRange.from || createdTime > dateRange.to) {
-                return;
-              }
+          const postId = postUrl
+            ? postUrl.match(/activity-(\d+)/)?.[1]
+              ? `urn:li:activity:${postUrl.match(/activity-(\d+)/)?.[1]}`
+              : postUrl
+            : `historical_${index}`;
+          const createdTime = parseDate(
+            shareDate,
+            now - index * 24 * 60 * 60 * 1000
+          );
 
-              // Calculate days since posted
-              const daysSincePosted = Math.floor(
-                (Date.now() - createdTime) / (24 * 60 * 60 * 1000)
-              );
-              const canRepost = daysSincePosted >= 30; // Can repost after 30 days
+          if (createdTime < dateRange.from || createdTime > dateRange.to)
+            return;
 
-              // Calculate engagement
-              const likes = parseInt(extract(share, ["Likes Count", "likesCount", "likes"], "0")) || 0;
-              const comments = parseInt(extract(share, ["Comments Count", "commentsCount", "comments"], "0")) || 0;
-              const shares = parseInt(extract(share, ["Shares Count", "sharesCount", "shares"], "0")) || 0;
-              const repurposeGrade = (likes + comments + shares) > 5 ? "red" : "blue";
+          const daysSincePosted = Math.floor(
+            (now - createdTime) / (24 * 60 * 60 * 1000)
+          );
+          const engagement = engagementMap.get(postId) || {
+            likes: 0,
+            comments: 0,
+            shares: 0,
+          };
 
-              processedPosts.push({
-                id: postId,
-                text: commentary,
-                url: postUrl,
-                timestamp: createdTime,
-                likes,
-                comments,
-                shares,
-                repurposeGrade,
-                media: share.media || null,
-                thumbnail,
-                canRepost,
-                daysSincePosted,
-                visibility,
-                mediaType,
-              });
-            }
+          const embeddedLikes =
+            parseInt(
+              extractData(share, ["Likes Count", "likesCount", "likes"], "0")
+            ) || 0;
+          const embeddedComments =
+            parseInt(
+              extractData(
+                share,
+                ["Comments Count", "commentsCount", "comments"],
+                "0"
+              )
+            ) || 0;
+          const embeddedShares =
+            parseInt(
+              extractData(share, ["Shares Count", "sharesCount", "shares"], "0")
+            ) || 0;
+
+          processedPosts.push({
+            id: postId,
+            text: commentary || "Post content",
+            url: postUrl || `https://linkedin.com/feed/update/${postId}`,
+            timestamp: createdTime,
+            likes: engagement.likes || embeddedLikes,
+            comments: engagement.comments || embeddedComments,
+            shares: engagement.shares || embeddedShares,
+            repurposeGrade:
+              engagement.likes + engagement.comments + engagement.shares > 5
+                ? "red"
+                : "blue",
+            media: share.media || null,
+            thumbnail,
+            canRepost: daysSincePosted >= 30,
+            daysSincePosted,
+            resourceName: "ugcPosts",
+            visibility,
+            mediaType,
+          });
         });
       }
 
       // Process changelog data
       if (changelogData?.elements) {
-        const postEvents = changelogData.elements.filter(e => e.resourceName === "ugcPosts");
-        
-        // Build engagement map
-        const engagementMap: Record<string, { likes: number; comments: number; shares: number }> = {};
-        
-        changelogData.elements.forEach((event: any) => {
-          const postUrn = event.activity?.object;
-          if (!postUrn) return;
-          
-          if (!engagementMap[postUrn]) {
-            engagementMap[postUrn] = { likes: 0, comments: 0, shares: 0 };
-          }
-          
-          if (event.resourceName === "socialActions/likes" && event.method === "CREATE") {
-            engagementMap[postUrn].likes++;
-          } else if (event.resourceName === "socialActions/comments" && event.method === "CREATE") {
-            engagementMap[postUrn].comments++;
-          }
-        });
+        const postEvents = changelogData.elements.filter(
+          (e: any) => e.resourceName === "ugcPosts"
+        );
 
-        // Process posts from changelog
         postEvents.forEach((event: any) => {
-          const postId = event.resourceId || event.id?.toString() || "";
-          const engagement = engagementMap[postId] || { likes: 0, comments: 0, shares: 0 };
-          
-          // Date filtering
-          if (event.capturedAt < dateRange.from || event.capturedAt > dateRange.to) return;
-          
-          const specificContent = event.activity?.specificContent?.["com.linkedin.ugc.ShareContent"];
-          const postText = specificContent?.shareCommentary?.text || event.activity?.commentary || "Recent post content...";
-          const daysSincePosted = Math.floor((Date.now() - event.capturedAt) / (24 * 60 * 60 * 1000));
-          const repurposeGrade = (engagement.likes + engagement.comments + engagement.shares) > 3 ? "red" : "blue";
-          
+          const postId =
+            event.resourceId ||
+            event.id?.toString() ||
+            `changelog_${Date.now()}`;
+          const engagement = engagementMap.get(postId) || {
+            likes: 0,
+            comments: 0,
+            shares: 0,
+          };
+
+          if (
+            event.capturedAt < dateRange.from ||
+            event.capturedAt > dateRange.to
+          )
+            return;
+
+          const specificContent =
+            event.activity?.specificContent?.["com.linkedin.ugc.ShareContent"];
+          const postText =
+            specificContent?.shareCommentary?.text ||
+            event.activity?.commentary ||
+            "Recent post content...";
+          const daysSincePosted = Math.floor(
+            (now - event.capturedAt) / (24 * 60 * 60 * 1000)
+          );
+
           processedPosts.push({
             id: postId,
             text: postText,
@@ -186,9 +287,12 @@ export const PostPulse = () => {
             likes: engagement.likes,
             comments: engagement.comments,
             shares: engagement.shares,
-            repurposeGrade,
+            repurposeGrade:
+              engagement.likes + engagement.comments + engagement.shares > 3
+                ? "red"
+                : "blue",
             media: specificContent?.media?.[0] || null,
-            thumbnail: null,
+            thumbnail: undefined,
             canRepost: daysSincePosted >= 30,
             daysSincePosted,
             visibility: "PUBLIC",
@@ -197,14 +301,25 @@ export const PostPulse = () => {
         });
       }
 
-      // Return sorted and limited posts
-      return processedPosts
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 50);
+      const uniquePosts = processedPosts.filter(
+        (post, index, self) => index === self.findIndex((p) => p.id === post.id)
+      );
+
+      if (debugMode) {
+        console.log(
+          "Processed posts:",
+          uniquePosts.length,
+          "Sample:",
+          uniquePosts[0]
+        );
+      }
+
+      return uniquePosts.sort((a, b) => b.timestamp - a.timestamp).slice(0, 50);
     } catch (error) {
+      console.error("Error processing posts:", error);
       return [];
     }
-  }, [snapshotData, changelogData, dateRange]);
+  }, [snapshotData, changelogData, engagementMap, dateRange, debugMode]);
 
   const filteredPosts = posts.filter((post) =>
     post.text.toLowerCase().includes(searchTerm.toLowerCase())
@@ -272,7 +387,7 @@ export const PostPulse = () => {
     return text.substr(0, maxLength) + "...";
   };
 
-  if (snapshotLoading || changelogLoading) {
+  if (snapshotLoading || changelogLoading || richMediaLoading) {
     return (
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -337,6 +452,13 @@ export const PostPulse = () => {
           </p>
         </div>
         <div className="flex space-x-3">
+          <Button 
+            variant="outline" 
+            onClick={() => setDebugMode(!debugMode)}
+            className="text-xs"
+          >
+            {debugMode ? "Hide Debug" : "Debug Mode"}
+          </Button>
           <Button variant="outline">
             <RefreshCw size={16} className="mr-2" />
             Refresh
@@ -348,11 +470,29 @@ export const PostPulse = () => {
         </div>
       </div>
 
-            {/* Search and Time Filter */}
+      {/* Debug Information */}
+      {debugMode && (
+        <Card variant="glass" className="p-4 bg-yellow-50">
+          <h3 className="font-semibold mb-2">Debug Information:</h3>
+          <div className="text-sm space-y-1">
+            <div>Snapshot Data: {snapshotData?.elements?.length || 0} elements</div>
+            <div>Changelog Data: {changelogData?.elements?.length || 0} elements</div>
+            <div>Rich Media Data: {richMediaData?.elements?.length || 0} elements</div>
+            <div>Processed Posts: {posts.length}</div>
+            <div>Filtered Posts: {filteredPosts.length}</div>
+            <div>Date Range: {new Date(dateRange.from).toLocaleDateString()} - {new Date(dateRange.to).toLocaleDateString()}</div>
+          </div>
+        </Card>
+      )}
+
+      {/* Search and Time Filter */}
       <Card variant="glass" className="p-4">
         <div className="flex items-center space-x-4">
           <div className="relative flex-1">
-            <Search size={20} className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+            <Search
+              size={20}
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
+            />
             <input
               type="text"
               placeholder="Search your posts..."
@@ -387,7 +527,7 @@ export const PostPulse = () => {
             </button>
           </div>
         </div>
-        
+
         {/* Custom Date Picker */}
         {timeFilter === "custom" && (
           <div className="mt-4 p-4 bg-gray-50 rounded-lg">
@@ -398,7 +538,12 @@ export const PostPulse = () => {
                 <input
                   type="date"
                   value={customDates.from}
-                  onChange={(e) => setCustomDates(prev => ({ ...prev, from: e.target.value }))}
+                  onChange={(e) =>
+                    setCustomDates((prev) => ({
+                      ...prev,
+                      from: e.target.value,
+                    }))
+                  }
                   className="px-3 py-1 border border-gray-300 rounded text-sm"
                 />
               </div>
@@ -408,7 +553,9 @@ export const PostPulse = () => {
                 <input
                   type="date"
                   value={customDates.to}
-                  onChange={(e) => setCustomDates(prev => ({ ...prev, to: e.target.value }))}
+                  onChange={(e) =>
+                    setCustomDates((prev) => ({ ...prev, to: e.target.value }))
+                  }
                   className="px-3 py-1 border border-gray-300 rounded text-sm"
                 />
               </div>
