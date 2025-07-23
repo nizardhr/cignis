@@ -15,6 +15,7 @@ import { Button } from "../ui/Button";
 import { generateContent } from "../../services/openai";
 import { createLinkedInPost } from "../../services/linkedin";
 import { useAuthStore } from "../../stores/authStore";
+import { useAppStore } from "../../stores/appStore";
 import { useLocation } from "react-router-dom";
 import { useEffect } from "react";
 
@@ -34,6 +35,7 @@ interface IdeaData {
 const SESSION_STORAGE_KEYS = {
   REPURPOSE_POST: "repurposePost",
   IDEA_CONTENT: "ideaContent",
+  SCHEDULED_POST: "scheduledPost",
 } as const;
 
 const AUTO_GENERATE_DELAY = 1000;
@@ -42,6 +44,7 @@ const NOTIFICATION_DURATION = 5000;
 export const PostGen = () => {
   const location = useLocation();
   const { accessToken } = useAuthStore();
+  const { setCurrentModule } = useAppStore();
   const [activeTab, setActiveTab] = useState<"create" | "rewrite">("create");
 
   // Create New Post Section
@@ -219,44 +222,45 @@ export const PostGen = () => {
     }
   };
 
-  const handleSchedulePost = async () => {
+  const handleSchedulePost = () => {
     if (!generatedPost?.content && !rewrittenPost.trim()) return;
-    if (!accessToken) {
-      showNotification("error", "Please authenticate with LinkedIn first");
-      return;
-    }
 
-    const contentToPost = generatedPost?.content || rewrittenPost;
-    setIsPosting(true);
+    const contentToSchedule = generatedPost?.content || rewrittenPost;
 
-    try {
-      // For now, just post immediately since scheduling requires additional setup
-      await createLinkedInPost(
-        accessToken,
-        contentToPost,
-        uploadedFile || undefined
-      );
-      showNotification(
-        "success",
-        "Post successfully published to LinkedIn! (Scheduling feature coming soon)"
-      );
-      console.log("Post posted:", contentToPost);
+    // Store the post data in sessionStorage for Scheduler to access
+    const scheduledPostData = {
+      content: contentToSchedule,
+      media: uploadedFile
+        ? {
+            name: uploadedFile.name,
+            type: uploadedFile.type,
+            size: uploadedFile.size,
+          }
+        : null,
+      source: activeTab === "create" ? "generated" : "rewritten",
+      timestamp: Date.now(),
+    };
 
-      // Clear generated/rewritten post and file after posting
-      setGeneratedPost(null);
-      setRewrittenPost("");
-      setUploadedFile(null);
-    } catch (error) {
-      console.error("Failed to post to LinkedIn:", error);
-      showNotification(
-        "error",
-        `Failed to post: ${
-          error instanceof Error ? error.message : "Unknown error"
-        }`
-      );
-    } finally {
-      setIsPosting(false);
-    }
+    sessionStorage.setItem(
+      SESSION_STORAGE_KEYS.SCHEDULED_POST,
+      JSON.stringify(scheduledPostData)
+    );
+
+    // Navigate to Scheduler module
+    setCurrentModule("scheduler");
+
+    // Update URL to show the module change
+    window.history.pushState({}, "", "/?module=scheduler");
+
+    showNotification(
+      "success",
+      "Post moved to Scheduler! Set a time to schedule it."
+    );
+
+    // Clear the current post data
+    setGeneratedPost(null);
+    setRewrittenPost("");
+    setUploadedFile(null);
   };
 
   const copyToClipboard = (text: string) => {
