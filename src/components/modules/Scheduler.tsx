@@ -12,6 +12,7 @@ import {
   ArrowRight,
   FileText,
   Upload,
+  X,
 } from "lucide-react";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
@@ -25,7 +26,6 @@ interface ScheduledPost {
     name: string;
     type: string;
     size: number;
-    data?: string; // Base64 data for preview
   } | null;
   status: "scheduled" | "posted" | "draft";
   createdAt: number;
@@ -38,7 +38,6 @@ interface PostGenData {
     name: string;
     type: string;
     size: number;
-    data?: string;
   } | null;
   source: "scheduler";
   timestamp: number;
@@ -69,28 +68,15 @@ export const Scheduler = () => {
     if (scheduledPostData) {
       try {
         const data = JSON.parse(scheduledPostData);
+        console.log("Loading scheduled post from PostGen:", data);
 
-        // Auto-populate the compose form
         setNewPost({
           content: data.content,
           scheduledTime: "",
           media: null,
         });
 
-        // Convert media data if present
-        if (data.media) {
-          // For now, we'll just store the media info
-          // In a real app, you'd want to handle file conversion properly
-          setNewPost((prev) => ({
-            ...prev,
-            content: data.content,
-          }));
-        }
-
-        // Open the compose modal
         setIsComposing(true);
-
-        // Clear the data after using it
         sessionStorage.removeItem("scheduledPost");
       } catch (error) {
         console.error("Error parsing scheduled post data:", error);
@@ -102,7 +88,9 @@ export const Scheduler = () => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored) {
-        setPosts(JSON.parse(stored));
+        const parsedPosts = JSON.parse(stored);
+        console.log("Loaded posts from storage:", parsedPosts);
+        setPosts(parsedPosts);
       }
     } catch (error) {
       console.error("Error loading posts:", error);
@@ -111,6 +99,7 @@ export const Scheduler = () => {
 
   const savePosts = (updatedPosts: ScheduledPost[]) => {
     try {
+      console.log("Saving posts:", updatedPosts);
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedPosts));
       setPosts(updatedPosts);
     } catch (error) {
@@ -120,6 +109,8 @@ export const Scheduler = () => {
 
   const handleSchedulePost = () => {
     if (!newPost.content) return;
+
+    console.log("Creating new post with media:", newPost.media);
 
     const post: ScheduledPost = {
       id: Date.now().toString(),
@@ -137,6 +128,8 @@ export const Scheduler = () => {
       updatedAt: Date.now(),
     };
 
+    console.log("Created post:", post);
+
     const updatedPosts = [...posts, post];
     savePosts(updatedPosts);
     resetForm();
@@ -144,6 +137,8 @@ export const Scheduler = () => {
 
   const handleSaveDraft = () => {
     if (!newPost.content) return;
+
+    console.log("Creating draft with media:", newPost.media);
 
     const post: ScheduledPost = {
       id: Date.now().toString(),
@@ -161,17 +156,20 @@ export const Scheduler = () => {
       updatedAt: Date.now(),
     };
 
+    console.log("Created draft:", post);
+
     const updatedPosts = [...posts, post];
     savePosts(updatedPosts);
     resetForm();
   };
 
   const handleEditPost = (post: ScheduledPost) => {
+    console.log("Editing post:", post);
     setEditingPost(post);
     setNewPost({
       content: post.content,
       scheduledTime: post.scheduledTime || "",
-      media: null,
+      media: null, // We don't load the file back, just show the info
     });
     setIsComposing(true);
   };
@@ -179,18 +177,24 @@ export const Scheduler = () => {
   const handleUpdatePost = () => {
     if (!editingPost || !newPost.content) return;
 
+    console.log("Updating post with media:", newPost.media);
+
     const updatedPost: ScheduledPost = {
       ...editingPost,
       content: newPost.content,
       scheduledTime: newPost.scheduledTime || undefined,
-      media: newPost.media ? {
-        name: newPost.media.name,
-        type: newPost.media.type,
-        size: newPost.media.size,
-      } : editingPost.media, // Preserve existing media if no new media is uploaded
+      media: newPost.media
+        ? {
+            name: newPost.media.name,
+            type: newPost.media.type,
+            size: newPost.media.size,
+          }
+        : editingPost.media, // Keep existing media if no new media
       status: newPost.scheduledTime ? "scheduled" : "draft",
       updatedAt: Date.now(),
     };
+
+    console.log("Updated post:", updatedPost);
 
     const updatedPosts = posts.map((p) =>
       p.id === editingPost.id ? updatedPost : p
@@ -207,7 +211,8 @@ export const Scheduler = () => {
   };
 
   const handlePushToPostGen = (post: ScheduledPost) => {
-    // Prepare data for PostGen
+    console.log("Pushing to PostGen:", post);
+
     const postGenData: PostGenData = {
       content: post.content,
       media: post.media,
@@ -215,24 +220,21 @@ export const Scheduler = () => {
       timestamp: Date.now(),
     };
 
-    // Store in sessionStorage for PostGen to access
     sessionStorage.setItem(POSTGEN_STORAGE_KEY, JSON.stringify(postGenData));
-
-    // Navigate to PostGen module
     setCurrentModule("postgen");
-
-    // Update URL
     window.history.pushState({}, "", "/?module=postgen");
   };
 
   const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
+      console.log("Media uploaded:", file);
       setNewPost({ ...newPost, media: file });
     }
   };
 
   const handleRemoveMedia = () => {
+    console.log("Removing media");
     setNewPost({ ...newPost, media: null });
   };
 
@@ -259,14 +261,20 @@ export const Scheduler = () => {
     return new Date(dateTime).toLocaleString();
   };
 
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return "0 Bytes";
+    const k = 1024;
+    const sizes = ["Bytes", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i];
+  };
+
   const sortedPosts = [...posts].sort((a, b) => {
-    // Sort by status: scheduled first, then draft, then posted
     const statusOrder = { scheduled: 0, draft: 1, posted: 2 };
     const statusDiff = statusOrder[a.status] - statusOrder[b.status];
 
     if (statusDiff !== 0) return statusDiff;
 
-    // Within same status, sort by scheduled time (if available) or creation time
     if (a.scheduledTime && b.scheduledTime) {
       return (
         new Date(a.scheduledTime).getTime() -
@@ -308,7 +316,7 @@ export const Scheduler = () => {
                 {editingPost ? "Edit Post" : "Compose New Post"}
               </h3>
               <Button variant="ghost" onClick={resetForm}>
-                ✕
+                <X size={20} />
               </Button>
             </div>
 
@@ -361,17 +369,21 @@ export const Scheduler = () => {
                 </div>
               </div>
 
-              {(newPost.media || (editingPost && editingPost.media)) && (
-                <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
+              {/* Media Display */}
+              {newPost.media && (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">
-                      <Image size={16} />
-                      <span>
-                        {newPost.media 
-                          ? `Selected: ${newPost.media.name}` 
-                          : `Current: ${editingPost?.media?.name}`
-                        }
-                      </span>
+                      <Image size={16} className="text-blue-600" />
+                      <div>
+                        <p className="text-sm font-medium text-blue-800">
+                          {newPost.media.name}
+                        </p>
+                        <p className="text-xs text-blue-600">
+                          {newPost.media.type} •{" "}
+                          {formatFileSize(newPost.media.size)}
+                        </p>
+                      </div>
                     </div>
                     <Button
                       variant="ghost"
@@ -379,8 +391,26 @@ export const Scheduler = () => {
                       onClick={handleRemoveMedia}
                       className="text-red-600 hover:text-red-700"
                     >
-                      Remove
+                      <X size={14} />
                     </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Show existing media when editing */}
+              {editingPost && editingPost.media && !newPost.media && (
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3">
+                  <div className="flex items-center space-x-2">
+                    <Image size={16} className="text-gray-600" />
+                    <div>
+                      <p className="text-sm font-medium text-gray-800">
+                        Current: {editingPost.media.name}
+                      </p>
+                      <p className="text-xs text-gray-600">
+                        {editingPost.media.type} •{" "}
+                        {formatFileSize(editingPost.media.size)}
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}
@@ -437,20 +467,23 @@ export const Scheduler = () => {
                         ? "Scheduled"
                         : "Posted"}
                     </span>
+
                     {post.scheduledTime && (
                       <div className="flex items-center space-x-1 text-sm text-gray-500">
                         <Clock size={14} />
                         <span>{formatDateTime(post.scheduledTime)}</span>
                       </div>
                     )}
+
                     {post.status === "draft" && (
                       <div className="flex items-center space-x-1 text-sm text-gray-500">
                         <FileText size={14} />
                         <span>Draft</span>
                       </div>
                     )}
+
                     {post.media && (
-                      <div className="flex items-center space-x-1 text-sm text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                      <div className="flex items-center space-x-1 text-sm text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">
                         <Image size={14} />
                         <span>Media attached</span>
                       </div>
@@ -466,9 +499,12 @@ export const Scheduler = () => {
                       <div className="flex items-center space-x-2">
                         <Image size={16} className="text-blue-600" />
                         <div className="flex-1">
-                          <p className="text-sm font-medium text-blue-800">{post.media.name}</p>
+                          <p className="text-sm font-medium text-blue-800">
+                            {post.media.name}
+                          </p>
                           <p className="text-xs text-blue-600">
-                            {post.media.type} • {(post.media.size / 1024 / 1024).toFixed(2)} MB
+                            {post.media.type} •{" "}
+                            {formatFileSize(post.media.size)}
                           </p>
                         </div>
                       </div>
