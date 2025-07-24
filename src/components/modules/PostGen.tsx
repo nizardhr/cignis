@@ -36,6 +36,7 @@ const SESSION_STORAGE_KEYS = {
   REPURPOSE_POST: "repurposePost",
   IDEA_CONTENT: "ideaContent",
   SCHEDULED_POST: "scheduledPost",
+  POSTGEN_DATA: "postgen_data",
 } as const;
 
 const AUTO_GENERATE_DELAY = 1000;
@@ -109,6 +110,28 @@ export const PostGen = () => {
       }
     }
 
+    // Check for post data from Scheduler
+    const schedulerData = sessionStorage.getItem(SESSION_STORAGE_KEYS.POSTGEN_DATA);
+    if (schedulerData) {
+      try {
+        const { content, media, source } = JSON.parse(schedulerData);
+        if (source === "scheduler") {
+          setActiveTab("rewrite");
+          setOriginalPost(content);
+          // If there's media, we could handle it here
+          if (media) {
+            // For now, we'll just log it
+            console.log("Media from scheduler:", media);
+          }
+          // Clear the data after using it
+          sessionStorage.removeItem(SESSION_STORAGE_KEYS.POSTGEN_DATA);
+          console.log("Loaded post from scheduler:", { content, media });
+        }
+      } catch (error) {
+        console.error("Error parsing scheduler data:", error);
+      }
+    }
+
     // Check URL parameters for tab and rewrite content
     const urlParams = new URLSearchParams(location.search);
     const tabParam = urlParams.get("tab");
@@ -134,6 +157,28 @@ export const PostGen = () => {
       return () => clearTimeout(timeoutId);
     }
   }, [postTopic, generatedPost]);
+
+  // Auto-rewrite post when content comes from scheduler
+  useEffect(() => {
+    if (originalPost && activeTab === "rewrite" && !rewrittenPost) {
+      // Check if this came from scheduler
+      const schedulerData = sessionStorage.getItem(SESSION_STORAGE_KEYS.POSTGEN_DATA);
+      if (schedulerData) {
+        try {
+          const { source } = JSON.parse(schedulerData);
+          if (source === "scheduler") {
+            const timeoutId = setTimeout(() => {
+              handleRewritePost();
+            }, AUTO_GENERATE_DELAY);
+
+            return () => clearTimeout(timeoutId);
+          }
+        } catch (error) {
+          console.error("Error checking scheduler source:", error);
+        }
+      }
+    }
+  }, [originalPost, activeTab, rewrittenPost]);
 
   const handleGeneratePost = async () => {
     if (!postTopic.trim()) return;

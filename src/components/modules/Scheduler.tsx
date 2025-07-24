@@ -1,66 +1,74 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { Calendar, Clock, Plus, Image, Send, Save } from "lucide-react";
+import {
+  Calendar,
+  Clock,
+  Plus,
+  Image,
+  Send,
+  Save,
+  Edit3,
+  Trash2,
+  ArrowRight,
+  FileText,
+  Upload,
+} from "lucide-react";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
+import { useAppStore } from "../../stores/appStore";
 
 interface ScheduledPost {
   id: string;
   content: string;
-  scheduledTime: string;
-  media?: string;
+  scheduledTime?: string;
+  media?: {
+    name: string;
+    type: string;
+    size: number;
+    data?: string; // Base64 data for preview
+  } | null;
   status: "scheduled" | "posted" | "draft";
+  createdAt: number;
+  updatedAt: number;
 }
 
-interface ScheduledPostData {
+interface PostGenData {
   content: string;
   media?: {
     name: string;
     type: string;
     size: number;
+    data?: string;
   } | null;
-  source: "generated" | "rewritten";
+  source: "scheduler";
   timestamp: number;
 }
 
-const SESSION_STORAGE_KEYS = {
-  SCHEDULED_POST: "scheduledPost",
-} as const;
+const STORAGE_KEY = "scheduler_posts";
+const POSTGEN_STORAGE_KEY = "postgen_data";
 
 export const Scheduler = () => {
-  const [posts, setPosts] = useState<ScheduledPost[]>([
-    {
-      id: "1",
-      content:
-        "Exciting announcement coming this week! Stay tuned for some game-changing updates in our industry.",
-      scheduledTime: "2024-01-15T10:00",
-      status: "scheduled",
-    },
-    {
-      id: "2",
-      content:
-        "Just wrapped up an amazing project with the team. The collaboration was incredible!",
-      scheduledTime: "2024-01-14T14:30",
-      status: "posted",
-    },
-  ]);
-
+  const { setCurrentModule } = useAppStore();
+  const [posts, setPosts] = useState<ScheduledPost[]>([]);
+  const [isComposing, setIsComposing] = useState(false);
+  const [editingPost, setEditingPost] = useState<ScheduledPost | null>(null);
   const [newPost, setNewPost] = useState({
     content: "",
     scheduledTime: "",
     media: null as File | null,
   });
 
-  const [isComposing, setIsComposing] = useState(false);
+  // Load posts from localStorage on component mount
+  useEffect(() => {
+    loadPosts();
+  }, []);
 
   // Check for scheduled post data from PostGen
   useEffect(() => {
-    const scheduledPostData = sessionStorage.getItem(
-      SESSION_STORAGE_KEYS.SCHEDULED_POST
-    );
+    const scheduledPostData = sessionStorage.getItem("scheduledPost");
     if (scheduledPostData) {
       try {
-        const data: ScheduledPostData = JSON.parse(scheduledPostData);
+        const data = JSON.parse(scheduledPostData);
 
         // Auto-populate the compose form
         setNewPost({
@@ -69,47 +77,147 @@ export const Scheduler = () => {
           media: null,
         });
 
+        // Convert media data if present
+        if (data.media) {
+          // For now, we'll just store the media info
+          // In a real app, you'd want to handle file conversion properly
+          setNewPost((prev) => ({
+            ...prev,
+            content: data.content,
+          }));
+        }
+
         // Open the compose modal
         setIsComposing(true);
 
         // Clear the data after using it
-        sessionStorage.removeItem(SESSION_STORAGE_KEYS.SCHEDULED_POST);
-
-        console.log("Loaded scheduled post from PostGen:", data);
+        sessionStorage.removeItem("scheduledPost");
       } catch (error) {
         console.error("Error parsing scheduled post data:", error);
       }
     }
   }, []);
 
-  const handleSchedulePost = () => {
-    if (newPost.content && newPost.scheduledTime) {
-      const post: ScheduledPost = {
-        id: Date.now().toString(),
-        content: newPost.content,
-        scheduledTime: newPost.scheduledTime,
-        status: "scheduled",
-      };
-
-      setPosts([...posts, post]);
-      setNewPost({ content: "", scheduledTime: "", media: null });
-      setIsComposing(false);
+  const loadPosts = () => {
+    try {
+      const stored = localStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        setPosts(JSON.parse(stored));
+      }
+    } catch (error) {
+      console.error("Error loading posts:", error);
     }
   };
 
-  const handleSaveDraft = () => {
-    if (newPost.content) {
-      const post: ScheduledPost = {
-        id: Date.now().toString(),
-        content: newPost.content,
-        scheduledTime: newPost.scheduledTime,
-        status: "draft",
-      };
-
-      setPosts([...posts, post]);
-      setNewPost({ content: "", scheduledTime: "", media: null });
-      setIsComposing(false);
+  const savePosts = (updatedPosts: ScheduledPost[]) => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(updatedPosts));
+      setPosts(updatedPosts);
+    } catch (error) {
+      console.error("Error saving posts:", error);
     }
+  };
+
+  const handleSchedulePost = () => {
+    if (!newPost.content) return;
+
+    const post: ScheduledPost = {
+      id: Date.now().toString(),
+      content: newPost.content,
+      scheduledTime: newPost.scheduledTime || undefined,
+      media: newPost.media
+        ? {
+            name: newPost.media.name,
+            type: newPost.media.type,
+            size: newPost.media.size,
+          }
+        : null,
+      status: newPost.scheduledTime ? "scheduled" : "draft",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    const updatedPosts = [...posts, post];
+    savePosts(updatedPosts);
+    resetForm();
+  };
+
+  const handleSaveDraft = () => {
+    if (!newPost.content) return;
+
+    const post: ScheduledPost = {
+      id: Date.now().toString(),
+      content: newPost.content,
+      scheduledTime: undefined,
+      media: newPost.media
+        ? {
+            name: newPost.media.name,
+            type: newPost.media.type,
+            size: newPost.media.size,
+          }
+        : null,
+      status: "draft",
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    };
+
+    const updatedPosts = [...posts, post];
+    savePosts(updatedPosts);
+    resetForm();
+  };
+
+  const handleEditPost = (post: ScheduledPost) => {
+    setEditingPost(post);
+    setNewPost({
+      content: post.content,
+      scheduledTime: post.scheduledTime || "",
+      media: null,
+    });
+    setIsComposing(true);
+  };
+
+  const handleUpdatePost = () => {
+    if (!editingPost || !newPost.content) return;
+
+    const updatedPost: ScheduledPost = {
+      ...editingPost,
+      content: newPost.content,
+      scheduledTime: newPost.scheduledTime || undefined,
+      status: newPost.scheduledTime ? "scheduled" : "draft",
+      updatedAt: Date.now(),
+    };
+
+    const updatedPosts = posts.map((p) =>
+      p.id === editingPost.id ? updatedPost : p
+    );
+    savePosts(updatedPosts);
+    resetForm();
+  };
+
+  const handleDeletePost = (postId: string) => {
+    if (window.confirm("Are you sure you want to delete this post?")) {
+      const updatedPosts = posts.filter((p) => p.id !== postId);
+      savePosts(updatedPosts);
+    }
+  };
+
+  const handlePushToPostGen = (post: ScheduledPost) => {
+    // Prepare data for PostGen
+    const postGenData: PostGenData = {
+      content: post.content,
+      media: post.media,
+      source: "scheduler",
+      timestamp: Date.now(),
+    };
+
+    // Store in sessionStorage for PostGen to access
+    sessionStorage.setItem(POSTGEN_STORAGE_KEY, JSON.stringify(postGenData));
+
+    // Navigate to PostGen module
+    setCurrentModule("postgen");
+
+    // Update URL
+    window.history.pushState({}, "", "/?module=postgen");
   };
 
   const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -119,11 +227,46 @@ export const Scheduler = () => {
     }
   };
 
-  const statusColors = {
-    scheduled: "bg-blue-100 text-blue-800",
-    posted: "bg-green-100 text-green-800",
-    draft: "bg-gray-100 text-gray-800",
+  const resetForm = () => {
+    setNewPost({ content: "", scheduledTime: "", media: null });
+    setIsComposing(false);
+    setEditingPost(null);
   };
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "scheduled":
+        return "bg-blue-100 text-blue-800 border-blue-200";
+      case "posted":
+        return "bg-green-100 text-green-800 border-green-200";
+      case "draft":
+        return "bg-gray-100 text-gray-800 border-gray-200";
+      default:
+        return "bg-gray-100 text-gray-800 border-gray-200";
+    }
+  };
+
+  const formatDateTime = (dateTime: string) => {
+    return new Date(dateTime).toLocaleString();
+  };
+
+  const sortedPosts = [...posts].sort((a, b) => {
+    // Sort by status: scheduled first, then draft, then posted
+    const statusOrder = { scheduled: 0, draft: 1, posted: 2 };
+    const statusDiff = statusOrder[a.status] - statusOrder[b.status];
+
+    if (statusDiff !== 0) return statusDiff;
+
+    // Within same status, sort by scheduled time (if available) or creation time
+    if (a.scheduledTime && b.scheduledTime) {
+      return (
+        new Date(a.scheduledTime).getTime() -
+        new Date(b.scheduledTime).getTime()
+      );
+    }
+
+    return b.createdAt - a.createdAt;
+  });
 
   return (
     <motion.div
@@ -140,25 +283,43 @@ export const Scheduler = () => {
         </Button>
       </div>
 
-      {/* Compose Post Modal */}
+      {/* Compose/Edit Post Modal */}
       {isComposing && (
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
           className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4"
         >
-          <Card variant="glass" className="w-full max-w-2xl p-6">
-            <h3 className="text-lg font-semibold mb-4">Compose New Post</h3>
+          <Card
+            variant="glass"
+            className="w-full max-w-2xl p-6 max-h-[90vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold">
+                {editingPost ? "Edit Post" : "Compose New Post"}
+              </h3>
+              <Button variant="ghost" onClick={resetForm}>
+                ✕
+              </Button>
+            </div>
 
             <div className="space-y-4">
-              <textarea
-                value={newPost.content}
-                onChange={(e) =>
-                  setNewPost({ ...newPost, content: e.target.value })
-                }
-                placeholder="What's on your mind?"
-                className="w-full h-32 p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
-              />
+              <div>
+                <label className="block text-sm font-medium mb-2">
+                  Post Content
+                </label>
+                <textarea
+                  value={newPost.content}
+                  onChange={(e) =>
+                    setNewPost({ ...newPost, content: e.target.value })
+                  }
+                  placeholder="What's on your mind?"
+                  className="w-full h-32 p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+                />
+                <p className="text-sm text-gray-500 mt-1">
+                  {newPost.content.length}/3000 characters
+                </p>
+              </div>
 
               <div className="flex items-center space-x-4">
                 <div className="flex items-center space-x-2">
@@ -176,7 +337,7 @@ export const Scheduler = () => {
                 <div className="flex items-center space-x-2">
                   <input
                     type="file"
-                    accept="image/*"
+                    accept="image/*,video/*"
                     onChange={handleMediaUpload}
                     className="hidden"
                     id="media-upload"
@@ -185,33 +346,42 @@ export const Scheduler = () => {
                     htmlFor="media-upload"
                     className="flex items-center space-x-2 px-3 py-2 border border-gray-300 rounded-lg hover:bg-gray-50 cursor-pointer"
                   >
-                    <Image size={16} />
+                    <Upload size={16} />
                     <span className="text-sm">Add Media</span>
                   </label>
                 </div>
               </div>
 
               {newPost.media && (
-                <div className="text-sm text-gray-600">
-                  Selected: {newPost.media.name}
+                <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
+                  <div className="flex items-center space-x-2">
+                    <FileText size={16} />
+                    <span>Selected: {newPost.media.name}</span>
+                  </div>
                 </div>
               )}
 
-              <div className="flex justify-end space-x-3">
-                <Button variant="ghost" onClick={() => setIsComposing(false)}>
+              <div className="flex justify-end space-x-3 pt-4">
+                <Button variant="ghost" onClick={resetForm}>
                   Cancel
                 </Button>
-                <Button variant="outline" onClick={handleSaveDraft}>
+                <Button
+                  variant="outline"
+                  onClick={editingPost ? handleUpdatePost : handleSaveDraft}
+                  disabled={!newPost.content}
+                >
                   <Save size={16} className="mr-2" />
-                  Save Draft
+                  {editingPost ? "Update" : "Save Draft"}
                 </Button>
                 <Button
                   variant="primary"
-                  onClick={handleSchedulePost}
-                  disabled={!newPost.content || !newPost.scheduledTime}
+                  onClick={editingPost ? handleUpdatePost : handleSchedulePost}
+                  disabled={
+                    !newPost.content || (!editingPost && !newPost.scheduledTime)
+                  }
                 >
                   <Send size={16} className="mr-2" />
-                  Schedule Post
+                  {editingPost ? "Update" : "Schedule Post"}
                 </Button>
               </div>
             </div>
@@ -219,9 +389,9 @@ export const Scheduler = () => {
         </motion.div>
       )}
 
-      {/* Scheduled Posts */}
+      {/* Posts List */}
       <div className="space-y-4">
-        {posts.map((post, index) => (
+        {sortedPosts.map((post, index) => (
           <motion.div
             key={post.id}
             initial={{ opacity: 0, y: 20 }}
@@ -231,56 +401,75 @@ export const Scheduler = () => {
             <Card variant="glass" className="p-6">
               <div className="flex items-start justify-between">
                 <div className="flex-1">
-                  <div className="flex items-center space-x-2 mb-2">
+                  <div className="flex items-center space-x-2 mb-3">
                     <span
-                      className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        statusColors[post.status]
-                      }`}
+                      className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(
+                        post.status
+                      )}`}
                     >
-                      {post.status.charAt(0).toUpperCase() +
-                        post.status.slice(1)}
+                      {post.status === "draft"
+                        ? "Draft"
+                        : post.status === "scheduled"
+                        ? "Scheduled"
+                        : "Posted"}
                     </span>
-                    <div className="flex items-center space-x-1 text-sm text-gray-500">
-                      <Clock size={14} />
-                      <span>
-                        {new Date(post.scheduledTime).toLocaleString()}
-                      </span>
-                    </div>
+                    {post.scheduledTime && (
+                      <div className="flex items-center space-x-1 text-sm text-gray-500">
+                        <Clock size={14} />
+                        <span>{formatDateTime(post.scheduledTime)}</span>
+                      </div>
+                    )}
+                    {post.status === "draft" && (
+                      <div className="flex items-center space-x-1 text-sm text-gray-500">
+                        <FileText size={14} />
+                        <span>Draft</span>
+                      </div>
+                    )}
                   </div>
-                  <p className="text-gray-700 dark:text-gray-300 mb-4">
+
+                  <p className="text-gray-700 dark:text-gray-300 mb-4 whitespace-pre-line">
                     {post.content}
                   </p>
+
                   {post.media && (
-                    <div className="w-full h-48 bg-gray-200 dark:bg-gray-700 rounded-lg mb-4 flex items-center justify-center">
-                      <span className="text-gray-500">Media Preview</span>
+                    <div className="w-full h-32 bg-gray-100 dark:bg-gray-700 rounded-lg mb-4 flex items-center justify-center">
+                      <div className="flex items-center space-x-2 text-gray-500">
+                        <FileText size={20} />
+                        <span>{post.media.name}</span>
+                      </div>
                     </div>
                   )}
                 </div>
-                <div className="flex space-x-2 ml-4">
-                  {post.status === "scheduled" && (
-                    <>
-                      <Button variant="outline" size="sm">
-                        Edit
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="text-red-600"
-                      >
-                        Cancel
-                      </Button>
-                    </>
-                  )}
-                  {post.status === "draft" && (
-                    <>
-                      <Button variant="outline" size="sm">
-                        Edit
-                      </Button>
-                      <Button variant="primary" size="sm">
-                        Schedule
-                      </Button>
-                    </>
-                  )}
+
+                <div className="flex flex-col space-y-2 ml-4">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handlePushToPostGen(post)}
+                    className="w-full"
+                  >
+                    <ArrowRight size={14} className="mr-1" />
+                    Push to PostGen
+                  </Button>
+
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleEditPost(post)}
+                  >
+                    <Edit3 size={14} className="mr-1" />
+                    Edit
+                  </Button>
+
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleDeletePost(post.id)}
+                    className="text-red-600 hover:text-red-700"
+                  >
+                    <Trash2 size={14} className="mr-1" />
+                    Delete
+                  </Button>
                 </div>
               </div>
             </Card>
@@ -291,8 +480,9 @@ export const Scheduler = () => {
       {posts.length === 0 && (
         <div className="text-center py-12">
           <Calendar size={48} className="mx-auto text-gray-400 mb-4" />
-          <p className="text-gray-500">
-            No scheduled posts yet. Create your first post!
+          <p className="text-gray-500 mb-2">No posts yet</p>
+          <p className="text-sm text-gray-400">
+            Create your first post to get started with scheduling
           </p>
         </div>
       )}
