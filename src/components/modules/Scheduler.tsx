@@ -455,7 +455,7 @@ export const Scheduler = () => {
       )}
 
       {/* Posts List */}
-      <div className="space-y-4">
+      <div className="space-y-6">
         {sortedPosts.map((post, index) => (
           <motion.div
             key={post.id}
@@ -463,93 +463,109 @@ export const Scheduler = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: index * 0.1 }}
           >
-            <Card variant="glass" className="p-6">
+            <Card variant="glass" className="p-6 hover:shadow-lg transition-all duration-200 border border-gray-100">
               <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  <div className="flex items-center space-x-2 mb-3">
-                    <span
-                      className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusColor(
-                        post.status
-                      )}`}
-                    >
-                      {post.status === "draft"
-                        ? "Draft"
-                        : post.status === "scheduled"
-                        ? "Scheduled"
-                        : "Posted"}
-                    </span>
-
-                    {post.scheduledTime && (
-                      <div className="flex items-center space-x-1 text-sm text-gray-500">
-                        <Clock size={14} />
-                        <span>{formatDateTime(post.scheduledTime)}</span>
-                      </div>
-                    )}
-
-                    {post.status === "draft" && (
-                      <div className="flex items-center space-x-1 text-sm text-gray-500">
-                        <FileText size={14} />
-                        <span>Draft</span>
-                      </div>
-                    )}
-
+                <div className="flex-1 min-w-0">
+                  {/* Header Section */}
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="flex items-center space-x-3">
+                      <span className={`px-3 py-1.5 rounded-full text-xs font-semibold border-2 ${getStatusColor(post.status)}`}>
+                        {post.status === "draft" ? "Draft" : 
+                         post.status === "scheduled" ? "Scheduled" : "Posted"}
+                      </span>
+                      
+                      {post.scheduledTime && (
+                        <div className="flex items-center space-x-1.5 text-sm text-gray-600 bg-gray-50 px-2 py-1 rounded-md">
+                          <Clock size={14} className="text-gray-500" />
+                          <span className="font-medium">{formatDateTime(post.scheduledTime)}</span>
+                        </div>
+                      )}
+                      
+                      {post.status === "draft" && (
+                        <div className="flex items-center space-x-1.5 text-sm text-gray-600 bg-gray-50 px-2 py-1 rounded-md">
+                          <FileText size={14} className="text-gray-500" />
+                          <span className="font-medium">Draft</span>
+                        </div>
+                      )}
+                    </div>
+                    
                     {post.media && (
-                      <div className="flex items-center space-x-1 text-sm text-blue-600 bg-blue-50 px-2 py-1 rounded border border-blue-200">
+                      <div className="flex items-center space-x-1.5 text-sm text-blue-600 bg-blue-50 px-2.5 py-1.5 rounded-md border border-blue-200">
                         <Image size={14} />
-                        <span>Media attached</span>
+                        <span className="font-medium">Media attached</span>
                       </div>
                     )}
                   </div>
-
-                  <p className="text-gray-700 dark:text-gray-300 mb-4 whitespace-pre-line">
-                    {post.content}
-                  </p>
-
+                  
+                  {/* Content Section */}
+                  <div className="mb-4">
+                    <p className="text-gray-800 dark:text-gray-200 whitespace-pre-line leading-relaxed text-base">
+                      {post.content}
+                    </p>
+                  </div>
+                  
+                  {/* Media Section */}
                   {post.media && (
-                    <div className="w-full bg-blue-50 border border-blue-200 rounded-lg mb-4 p-3">
-                      <div className="flex items-center space-x-2">
-                        <Image size={16} className="text-blue-600" />
-                        <div className="flex-1">
-                          <p className="text-sm font-medium text-blue-800">
-                            {post.media.name}
-                          </p>
-                          <p className="text-xs text-blue-600">
-                            {post.media.type} •{" "}
-                            {formatFileSize(post.media.size)}
+                    <div className="w-full bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl p-4 mb-4">
+                      <div className="flex items-center space-x-3">
+                        <div className="flex-shrink-0">
+                          <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
+                            <Image size={18} className="text-blue-600" />
+                          </div>
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-semibold text-blue-900 truncate">{post.media.name}</p>
+                          <p className="text-xs text-blue-700 mt-0.5">
+                            {post.media.type} • {formatFileSize(post.media.size)}
                           </p>
                         </div>
                       </div>
                     </div>
                   )}
+                  
+                  {/* Footer Section */}
+                  <div className="flex items-center justify-between pt-3 border-t border-gray-100">
+                    <div className="flex items-center space-x-2 text-xs text-gray-500">
+                      <span>Created: {new Date(post.createdAt).toLocaleDateString()}</span>
+                      {post.updatedAt !== post.createdAt && (
+                        <>
+                          <span>•</span>
+                          <span>Updated: {new Date(post.updatedAt).toLocaleDateString()}</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
-
-                <div className="flex flex-col space-y-2 ml-4">
+                
+                {/* Action Buttons */}
+                <div className="flex flex-col space-y-2 ml-6 min-w-[140px]">
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => handlePushToPostGen(post)}
-                    className="w-full"
+                    className="w-full bg-white hover:bg-blue-50 border-blue-200 text-blue-700 hover:text-blue-800"
                   >
-                    <ArrowRight size={14} className="mr-1" />
+                    <ArrowRight size={14} className="mr-1.5" />
                     Push to PostGen
                   </Button>
-
+                  
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => handleEditPost(post)}
+                    className="w-full bg-white hover:bg-gray-50"
                   >
-                    <Edit3 size={14} className="mr-1" />
+                    <Edit3 size={14} className="mr-1.5" />
                     Edit
                   </Button>
-
+                  
                   <Button
                     variant="ghost"
                     size="sm"
                     onClick={() => handleDeletePost(post.id)}
-                    className="text-red-600 hover:text-red-700"
+                    className="w-full text-red-600 hover:text-red-700 hover:bg-red-50"
                   >
-                    <Trash2 size={14} className="mr-1" />
+                    <Trash2 size={14} className="mr-1.5" />
                     Delete
                   </Button>
                 </div>
