@@ -419,14 +419,16 @@ export const Scheduler = () => {
                 <Button variant="ghost" onClick={resetForm}>
                   Cancel
                 </Button>
-                <Button
-                  variant="outline"
-                  onClick={editingPost ? handleUpdatePost : handleSaveDraft}
-                  disabled={!newPost.content}
-                >
-                  <Save size={16} className="mr-2" />
-                  {editingPost ? "Update" : "Save Draft"}
-                </Button>
+                {!editingPost && (
+                  <Button
+                    variant="outline"
+                    onClick={handleSaveDraft}
+                    disabled={!newPost.content}
+                  >
+                    <Save size={16} className="mr-2" />
+                    Save Draft
+                  </Button>
+                )}
                 <Button
                   variant="primary"
                   onClick={editingPost ? handleUpdatePost : handleSchedulePost}
@@ -434,8 +436,17 @@ export const Scheduler = () => {
                     !newPost.content || (!editingPost && !newPost.scheduledTime)
                   }
                 >
-                  <Send size={16} className="mr-2" />
-                  {editingPost ? "Update" : "Schedule Post"}
+                  {editingPost ? (
+                    <>
+                      <Save size={16} className="mr-2" />
+                      Update Post
+                    </>
+                  ) : (
+                    <>
+                      <Send size={16} className="mr-2" />
+                      Schedule Post
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
