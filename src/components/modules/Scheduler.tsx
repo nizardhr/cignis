@@ -183,6 +183,11 @@ export const Scheduler = () => {
       ...editingPost,
       content: newPost.content,
       scheduledTime: newPost.scheduledTime || undefined,
+      media: newPost.media ? {
+        name: newPost.media.name,
+        type: newPost.media.type,
+        size: newPost.media.size,
+      } : editingPost.media, // Preserve existing media if no new media is uploaded
       status: newPost.scheduledTime ? "scheduled" : "draft",
       updatedAt: Date.now(),
     };
@@ -225,6 +230,10 @@ export const Scheduler = () => {
     if (file) {
       setNewPost({ ...newPost, media: file });
     }
+  };
+
+  const handleRemoveMedia = () => {
+    setNewPost({ ...newPost, media: null });
   };
 
   const resetForm = () => {
@@ -352,11 +361,26 @@ export const Scheduler = () => {
                 </div>
               </div>
 
-              {newPost.media && (
+              {(newPost.media || (editingPost && editingPost.media)) && (
                 <div className="text-sm text-gray-600 bg-gray-50 p-2 rounded">
-                  <div className="flex items-center space-x-2">
-                    <FileText size={16} />
-                    <span>Selected: {newPost.media.name}</span>
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Image size={16} />
+                      <span>
+                        {newPost.media 
+                          ? `Selected: ${newPost.media.name}` 
+                          : `Current: ${editingPost?.media?.name}`
+                        }
+                      </span>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleRemoveMedia}
+                      className="text-red-600 hover:text-red-700"
+                    >
+                      Remove
+                    </Button>
                   </div>
                 </div>
               )}
@@ -425,6 +449,12 @@ export const Scheduler = () => {
                         <span>Draft</span>
                       </div>
                     )}
+                    {post.media && (
+                      <div className="flex items-center space-x-1 text-sm text-blue-600 bg-blue-50 px-2 py-1 rounded">
+                        <Image size={14} />
+                        <span>Media attached</span>
+                      </div>
+                    )}
                   </div>
 
                   <p className="text-gray-700 dark:text-gray-300 mb-4 whitespace-pre-line">
@@ -432,10 +462,15 @@ export const Scheduler = () => {
                   </p>
 
                   {post.media && (
-                    <div className="w-full h-32 bg-gray-100 dark:bg-gray-700 rounded-lg mb-4 flex items-center justify-center">
-                      <div className="flex items-center space-x-2 text-gray-500">
-                        <FileText size={20} />
-                        <span>{post.media.name}</span>
+                    <div className="w-full bg-blue-50 border border-blue-200 rounded-lg mb-4 p-3">
+                      <div className="flex items-center space-x-2">
+                        <Image size={16} className="text-blue-600" />
+                        <div className="flex-1">
+                          <p className="text-sm font-medium text-blue-800">{post.media.name}</p>
+                          <p className="text-xs text-blue-600">
+                            {post.media.type} • {(post.media.size / 1024 / 1024).toFixed(2)} MB
+                          </p>
+                        </div>
                       </div>
                     </div>
                   )}
