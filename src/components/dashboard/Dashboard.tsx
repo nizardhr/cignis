@@ -12,6 +12,7 @@ import {
   Heart,
   MessageCircle,
   Share,
+  User,
 } from "lucide-react";
 import { StatsCard } from "./StatsCard";
 import { Card } from "../ui/Card";
@@ -109,7 +110,7 @@ const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8"];
 export const Dashboard = () => {
   const { dmaToken, accessToken, isBasicAuthenticated, isFullyAuthenticated } =
     useAuthStore();
-  const [metrics, setMetrics] = useState({
+  const [metrics, setMetrics] = useState<any>({
     profileViews: 0,
     searchAppearances: 0,
     uniqueViewers: 0,
@@ -123,6 +124,15 @@ export const Dashboard = () => {
     postsCreated: 0,
     commentsGiven: 0,
     likesGiven: 0,
+    // New analytics metrics
+    profileStrength: 0,
+    networkQuality: 0,
+    socialActivity: 0,
+    contentPerformance: 0,
+    profileAnalysis: null,
+    networkAnalysis: null,
+    socialAnalysis: null,
+    contentAnalysis: null,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -140,34 +150,33 @@ export const Dashboard = () => {
 
         const service = new LinkedInDataService();
 
-        // Load all metrics in parallel
-        const [profileData, engagementData, connectionsData, activityData] =
-          await Promise.all([
-            service.fetchProfileViews(dmaToken),
-            service.calculateEngagementMetrics(dmaToken),
-            service.fetchConnections(dmaToken),
-            service.fetchActivityMetrics(dmaToken),
-          ]);
-
-        // Calculate total posts from user posts in engagement data
-        const totalPosts = Object.keys(
-          engagementData.engagementByPost || {}
-        ).length;
+        // Load all metrics using the new analytics service
+        const profileMetrics = await service.getProfileMetrics();
 
         const newMetrics = {
-          profileViews: profileData.profileViews || 0,
-          searchAppearances: profileData.searchAppearances || 0,
-          uniqueViewers: profileData.uniqueViewers || 0,
-          connections: connectionsData.total || 0,
-          connectionGrowth: connectionsData.monthlyGrowth || 0,
-          totalEngagement: engagementData.totalEngagement || 0,
-          avgPerPost: engagementData.avgPerPost || "0",
-          totalLikes: engagementData.totalLikes || 0,
-          totalComments: engagementData.totalComments || 0,
-          totalPosts: totalPosts,
-          postsCreated: activityData.postsCreated || 0,
-          commentsGiven: activityData.commentsGiven || 0,
-          likesGiven: activityData.likesGiven || 0,
+          profileViews: profileMetrics.profileViews || 0,
+          searchAppearances: profileMetrics.searchAppearances || 0,
+          uniqueViewers: profileMetrics.uniqueViewers || 0,
+          connections: profileMetrics.totalConnections || 0,
+          connectionGrowth:
+            profileMetrics.networkAnalysis?.analysis?.recentGrowth || 0,
+          totalEngagement: profileMetrics.totalEngagement || 0,
+          avgPerPost: "0", // Will be calculated from posts
+          totalLikes: profileMetrics.totalLikes || 0,
+          totalComments: profileMetrics.totalComments || 0,
+          totalPosts: profileMetrics.totalPosts || 0,
+          postsCreated: profileMetrics.totalPosts || 0,
+          commentsGiven: profileMetrics.likesGiven || 0,
+          likesGiven: profileMetrics.likesGiven || 0,
+          // New analytics metrics
+          profileStrength: profileMetrics.profileStrength || 0,
+          networkQuality: profileMetrics.networkQuality || 0,
+          socialActivity: profileMetrics.socialActivity || 0,
+          contentPerformance: profileMetrics.contentPerformance || 0,
+          profileAnalysis: profileMetrics.profileAnalysis || null,
+          networkAnalysis: profileMetrics.networkAnalysis || null,
+          socialAnalysis: profileMetrics.socialAnalysis || null,
+          contentAnalysis: profileMetrics.contentAnalysis || null,
         };
 
         setMetrics(newMetrics);
@@ -321,48 +330,42 @@ export const Dashboard = () => {
     >
       {/* Key Metrics Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <MetricCard
-          title="Profile Views"
-          value={metrics.profileViews}
-          subtitle="Past Year"
-          icon={<Eye size={24} className="text-white" />}
+        <StatsCard
+          title="Profile Strength"
+          value={`${metrics.profileStrength || 0}%`}
+          change={metrics.profileStrength >= 80 ? "Excellent" : "Good"}
+          icon={User}
+          color="blue"
         />
 
-        <MetricCard
-          title="Total Connections"
-          value={metrics.connections}
-          subtitle={`Past Year • +${metrics.connectionGrowth} this month`}
-          icon={<Users size={24} className="text-white" />}
-          trend={
-            metrics.connections > 0
-              ? (
-                  (metrics.connectionGrowth / metrics.connections) *
-                  100
-                ).toFixed(1)
-              : "0"
-          }
+        <StatsCard
+          title="Network Quality"
+          value={`${metrics.networkQuality || 0}/10`}
+          change={`${
+            metrics.networkAnalysis?.analysis?.recentGrowth || 0
+          } new this month`}
+          icon={Users}
+          color="green"
         />
 
-        <MetricCard
-          title="Total Engagement"
-          value={metrics.totalEngagement}
-          subtitle={`Past Year • ${metrics.avgPerPost} avg per post`}
-          icon={<Heart size={24} className="text-white" />}
-          trend={
-            metrics.totalPosts > 0
-              ? (
-                  (metrics.totalEngagement / (metrics.totalPosts * 10)) *
-                  100
-                ).toFixed(1)
-              : "0"
-          }
+        <StatsCard
+          title="Social Activity"
+          value={`${metrics.socialActivity || 0}/10`}
+          change={`${
+            metrics.socialAnalysis?.metrics?.likesGiven || 0
+          } interactions`}
+          icon={Heart}
+          color="purple"
         />
 
-        <MetricCard
-          title="Search Appearances"
-          value={metrics.searchAppearances}
-          subtitle="Past Year"
-          icon={<Search size={24} className="text-white" />}
+        <StatsCard
+          title="Content Performance"
+          value={`${metrics.contentPerformance || 0}/10`}
+          change={`${
+            metrics.contentAnalysis?.metrics?.totalPosts || 0
+          } posts published`}
+          icon={FileText}
+          color="orange"
         />
       </div>
 
@@ -384,28 +387,71 @@ export const Dashboard = () => {
         </Card>
 
         <Card variant="glass" className="p-6">
-          <h3 className="text-xl font-bold mb-4">Engagement Breakdown</h3>
+          <h3 className="text-xl font-bold mb-4">Professional Insights</h3>
           <div className="space-y-4">
-            <ActivityItem
-              label="Total Likes Received"
-              value={metrics.totalLikes}
-            />
-            <ActivityItem
-              label="Total Comments Received"
-              value={metrics.totalComments}
-            />
-            <ActivityItem label="Average per Post" value={metrics.avgPerPost} />
-            <ActivityItem
-              label="Engagement Rate"
-              value={`${
-                metrics.totalPosts > 0
-                  ? (
-                      (metrics.totalEngagement / (metrics.totalPosts * 10)) *
-                      100
-                    ).toFixed(1)
-                  : 0
-              }%`}
-            />
+            <div className="space-y-4">
+              <h4 className="text-lg font-semibold text-gray-800">
+                Profile Development
+              </h4>
+              {metrics.profileAnalysis?.recommendations?.map(
+                (rec: string, index: number) => (
+                  <div key={index} className="flex items-center space-x-3">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                    <span className="text-gray-600">{rec}</span>
+                  </div>
+                )
+              ) || (
+                <span className="text-gray-500">Profile looking strong!</span>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <h4 className="text-lg font-semibold text-gray-800">
+                Network Insights
+              </h4>
+              {metrics.networkAnalysis?.insights?.map(
+                (insight: string, index: number) => (
+                  <div key={index} className="flex items-center space-x-3">
+                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    <span className="text-gray-600">{insight}</span>
+                  </div>
+                )
+              ) || (
+                <span className="text-gray-500">Building your network...</span>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <h4 className="text-lg font-semibold text-gray-800">
+                Content Strategy
+              </h4>
+              {metrics.contentAnalysis?.insights?.map(
+                (insight: string, index: number) => (
+                  <div key={index} className="flex items-center space-x-3">
+                    <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                    <span className="text-gray-600">{insight}</span>
+                  </div>
+                )
+              ) || (
+                <span className="text-gray-500">Start publishing content!</span>
+              )}
+            </div>
+
+            <div className="space-y-4">
+              <h4 className="text-lg font-semibold text-gray-800">
+                Social Engagement
+              </h4>
+              {metrics.socialAnalysis?.insights?.map(
+                (insight: string, index: number) => (
+                  <div key={index} className="flex items-center space-x-3">
+                    <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                    <span className="text-gray-600">{insight}</span>
+                  </div>
+                )
+              ) || (
+                <span className="text-gray-500">Engage with your network!</span>
+              )}
+            </div>
           </div>
         </Card>
       </div>

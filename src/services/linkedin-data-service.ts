@@ -1,3 +1,10 @@
+import { 
+  calculateProfileStrength,
+  calculateNetworkQuality, 
+  calculateSocialActivityScore,
+  calculateContentPerformance
+} from './analytics-calculator';
+
 export class LinkedInDataService {
   private cache: Map<string, { data: any; timestamp: number }> = new Map();
   private readonly CACHE_DURATION = 60 * 60 * 1000; // 1 hour cache
@@ -287,6 +294,100 @@ export class LinkedInDataService {
       .map(([name, count]) => ({ [keyName.toLowerCase()]: name, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, limit);
+  }
+
+  async getProfileMetrics(): Promise<any> {
+    try {
+      // Fetch all required domain data
+      const [
+        profileData,
+        connectionsData, 
+        memberShareData,
+        likesData,
+        educationData,
+        skillsData,
+        positionsData,
+        changelogData
+      ] = await Promise.all([
+        this.fetchDomainData('PROFILE'),
+        this.fetchDomainData('CONNECTIONS'), 
+        this.fetchDomainData('MEMBER_SHARE_INFO'),
+        this.fetchDomainData('ALL_LIKES'),
+        this.fetchDomainData('EDUCATION'),
+        this.fetchDomainData('SKILLS'),
+        this.fetchDomainData('POSITIONS'),
+        this.fetchChangelogData()
+      ]);
+
+      // Calculate advanced metrics
+      const profileStrength = calculateProfileStrength({
+        PROFILE: profileData,
+        EDUCATION: educationData,
+        SKILLS: skillsData,
+        POSITIONS: positionsData
+      });
+
+      const networkQuality = calculateNetworkQuality(connectionsData);
+      const socialActivity = calculateSocialActivityScore(
+        likesData, 
+        connectionsData?.count || 0,
+        changelogData
+      );
+      const contentPerformance = calculateContentPerformance(memberShareData);
+
+      return {
+        // Keep original zeros for now
+        profileViews: 0,
+        searchAppearances: 0,
+        uniqueViewers: 0,
+        
+        // New meaningful metrics
+        profileStrength: profileStrength.score,
+        networkQuality: networkQuality.score,
+        socialActivity: socialActivity.score,
+        contentPerformance: contentPerformance.score,
+        
+        // Detailed breakdowns
+        profileAnalysis: profileStrength,
+        networkAnalysis: networkQuality,
+        socialAnalysis: socialActivity,
+        contentAnalysis: contentPerformance,
+        
+        // Keep existing working metrics
+        totalConnections: connectionsData?.count || 0,
+        totalPosts: memberShareData?.count || 0,
+        likesGiven: likesData?.count || 0
+      };
+    } catch (error) {
+      console.error('Error fetching profile metrics:', error);
+      return this.getDefaultMetrics();
+    }
+  }
+
+  private async fetchDomainData(domain: string): Promise<any> {
+    const response = await fetch(`/.netlify/functions/linkedin-snapshot?domain=${domain}`);
+    const data = await response.json();
+    return data.elements?.[0] || { count: 0, sample: null };
+  }
+
+  private async fetchChangelogData(): Promise<any> {
+    const response = await fetch('/.netlify/functions/linkedin-changelog?count=100');
+    return response.json();
+  }
+
+  private getDefaultMetrics(): any {
+    return {
+      profileViews: 0,
+      searchAppearances: 0,
+      uniqueViewers: 0,
+      profileStrength: 0,
+      networkQuality: 0,
+      socialActivity: 0,
+      contentPerformance: 0,
+      totalConnections: 0,
+      totalPosts: 0,
+      likesGiven: 0
+    };
   }
 }
 
