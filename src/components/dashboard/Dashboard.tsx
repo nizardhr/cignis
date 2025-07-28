@@ -150,8 +150,34 @@ export const Dashboard = () => {
 
         const service = new LinkedInDataService();
 
+        console.log("=== DASHBOARD DEBUG ===");
+        console.log("DMA Token available:", !!dmaToken);
+        console.log(
+          "Token preview:",
+          dmaToken ? `${dmaToken.substring(0, 20)}...` : "No token"
+        );
+
         // Load all metrics using the new analytics service
+        console.log("Fetching profile metrics...");
         const profileMetrics = await service.getProfileMetrics();
+
+        console.log("Raw LinkedIn data from getProfileMetrics:", {
+          profileMetrics,
+          profileViews: profileMetrics.profileViews,
+          searchAppearances: profileMetrics.searchAppearances,
+          uniqueViewers: profileMetrics.uniqueViewers,
+          totalConnections: profileMetrics.totalConnections,
+          totalPosts: profileMetrics.totalPosts,
+          likesGiven: profileMetrics.likesGiven,
+          profileStrength: profileMetrics.profileStrength,
+          networkQuality: profileMetrics.networkQuality,
+          socialActivity: profileMetrics.socialActivity,
+          contentPerformance: profileMetrics.contentPerformance,
+          profileAnalysis: profileMetrics.profileAnalysis,
+          networkAnalysis: profileMetrics.networkAnalysis,
+          socialAnalysis: profileMetrics.socialAnalysis,
+          contentAnalysis: profileMetrics.contentAnalysis,
+        });
 
         const newMetrics = {
           profileViews: profileMetrics.profileViews || 0,
@@ -178,6 +204,23 @@ export const Dashboard = () => {
           socialAnalysis: profileMetrics.socialAnalysis || null,
           contentAnalysis: profileMetrics.contentAnalysis || null,
         };
+
+        console.log("Calculated metrics for dashboard:", {
+          profileStrength: newMetrics.profileStrength,
+          networkQuality: newMetrics.networkQuality,
+          socialActivity: newMetrics.socialActivity,
+          contentPerformance: newMetrics.contentPerformance,
+          connections: newMetrics.connections,
+          totalPosts: newMetrics.totalPosts,
+          likesGiven: newMetrics.likesGiven,
+        });
+
+        console.log("StatsCard values that will be rendered:", {
+          profileStrength: `${newMetrics.profileStrength || 0}%`,
+          networkQuality: `${newMetrics.networkQuality || 0}/10`,
+          socialActivity: `${newMetrics.socialActivity || 0}/10`,
+          contentPerformance: `${newMetrics.contentPerformance || 0}/10`,
+        });
 
         setMetrics(newMetrics);
       } catch (err) {

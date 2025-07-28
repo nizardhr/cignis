@@ -1,9 +1,9 @@
-import { 
+import {
   calculateProfileStrength,
-  calculateNetworkQuality, 
+  calculateNetworkQuality,
   calculateSocialActivityScore,
-  calculateContentPerformance
-} from './analytics-calculator';
+  calculateContentPerformance,
+} from "./analytics-calculator";
 
 export class LinkedInDataService {
   private cache: Map<string, { data: any; timestamp: number }> = new Map();
@@ -233,21 +233,33 @@ export class LinkedInDataService {
 
   async fetchActivityMetrics(token: string) {
     try {
-      const response = await fetch("/.netlify/functions/linkedin-changelog?count=100", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
+      const response = await fetch(
+        "/.netlify/functions/linkedin-changelog?count=100",
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
 
-      if (!response.ok) return {
-        postsCreated: 0, commentsGiven: 0, likesGiven: 0,
-        articlesPublished: 0, messagesSent: 0, invitationsSent: 0
-      };
+      if (!response.ok)
+        return {
+          postsCreated: 0,
+          commentsGiven: 0,
+          likesGiven: 0,
+          articlesPublished: 0,
+          messagesSent: 0,
+          invitationsSent: 0,
+        };
 
       const data = await response.json();
       const elements = data.elements || data || [];
 
       const activities = {
-        postsCreated: 0, commentsGiven: 0, likesGiven: 0,
-        articlesPublished: 0, messagesSent: 0, invitationsSent: 0
+        postsCreated: 0,
+        commentsGiven: 0,
+        likesGiven: 0,
+        articlesPublished: 0,
+        messagesSent: 0,
+        invitationsSent: 0,
       };
 
       elements.forEach((event: any) => {
@@ -276,8 +288,12 @@ export class LinkedInDataService {
       return activities;
     } catch (error) {
       return {
-        postsCreated: 0, commentsGiven: 0, likesGiven: 0,
-        articlesPublished: 0, messagesSent: 0, invitationsSent: 0
+        postsCreated: 0,
+        commentsGiven: 0,
+        likesGiven: 0,
+        articlesPublished: 0,
+        messagesSent: 0,
+        invitationsSent: 0,
       };
     }
   }
@@ -298,81 +314,185 @@ export class LinkedInDataService {
 
   async getProfileMetrics(): Promise<any> {
     try {
+      console.log("=== LINKEDIN DATA SERVICE DEBUG ===");
+      console.log("Starting getProfileMetrics...");
+
       // Fetch all required domain data
+      console.log("Fetching domain data...");
       const [
         profileData,
-        connectionsData, 
+        connectionsData,
         memberShareData,
         likesData,
         educationData,
         skillsData,
         positionsData,
-        changelogData
+        changelogData,
       ] = await Promise.all([
-        this.fetchDomainData('PROFILE'),
-        this.fetchDomainData('CONNECTIONS'), 
-        this.fetchDomainData('MEMBER_SHARE_INFO'),
-        this.fetchDomainData('ALL_LIKES'),
-        this.fetchDomainData('EDUCATION'),
-        this.fetchDomainData('SKILLS'),
-        this.fetchDomainData('POSITIONS'),
-        this.fetchChangelogData()
+        this.fetchDomainData("PROFILE"),
+        this.fetchDomainData("CONNECTIONS"),
+        this.fetchDomainData("MEMBER_SHARE_INFO"),
+        this.fetchDomainData("ALL_LIKES"),
+        this.fetchDomainData("EDUCATION"),
+        this.fetchDomainData("SKILLS"),
+        this.fetchDomainData("POSITIONS"),
+        this.fetchChangelogData(),
       ]);
 
-      // Calculate advanced metrics
-      const profileStrength = calculateProfileStrength({
-        PROFILE: profileData,
-        EDUCATION: educationData,
-        SKILLS: skillsData,
-        POSITIONS: positionsData
+      console.log("Raw domain data received:", {
+        profileData: { count: profileData?.count, sample: profileData?.sample },
+        connectionsData: {
+          count: connectionsData?.count,
+          sample: connectionsData?.sample,
+        },
+        memberShareData: {
+          count: memberShareData?.count,
+          sample: memberShareData?.sample,
+        },
+        likesData: { count: likesData?.count, sample: likesData?.sample },
+        educationData: {
+          count: educationData?.count,
+          sample: educationData?.sample,
+        },
+        skillsData: { count: skillsData?.count, sample: skillsData?.sample },
+        positionsData: {
+          count: positionsData?.count,
+          sample: positionsData?.sample,
+        },
+        changelogData: { elements: changelogData?.elements?.length },
       });
 
-      const networkQuality = calculateNetworkQuality(connectionsData);
-      const socialActivity = calculateSocialActivityScore(
-        likesData, 
-        connectionsData?.count || 0,
-        changelogData
-      );
-      const contentPerformance = calculateContentPerformance(memberShareData);
+      // Calculate advanced metrics
+      console.log("Calculating analytics metrics...");
 
-      return {
-        // Keep original zeros for now
-        profileViews: 0,
-        searchAppearances: 0,
-        uniqueViewers: 0,
-        
-        // New meaningful metrics
-        profileStrength: profileStrength.score,
-        networkQuality: networkQuality.score,
-        socialActivity: socialActivity.score,
-        contentPerformance: contentPerformance.score,
-        
-        // Detailed breakdowns
-        profileAnalysis: profileStrength,
-        networkAnalysis: networkQuality,
-        socialAnalysis: socialActivity,
-        contentAnalysis: contentPerformance,
-        
-        // Keep existing working metrics
-        totalConnections: connectionsData?.count || 0,
-        totalPosts: memberShareData?.count || 0,
-        likesGiven: likesData?.count || 0
-      };
+      try {
+        const profileStrength = calculateProfileStrength({
+          PROFILE: profileData,
+          EDUCATION: educationData,
+          SKILLS: skillsData,
+          POSITIONS: positionsData,
+        });
+        console.log("Profile strength calculated:", profileStrength);
+
+        const networkQuality = calculateNetworkQuality(connectionsData);
+        console.log("Network quality calculated:", networkQuality);
+
+        const socialActivity = calculateSocialActivityScore(
+          likesData,
+          connectionsData?.count || 0,
+          changelogData
+        );
+        console.log("Social activity calculated:", socialActivity);
+
+        const contentPerformance = calculateContentPerformance(memberShareData);
+        console.log("Content performance calculated:", contentPerformance);
+
+        const result = {
+          // Keep original zeros for now
+          profileViews: 0,
+          searchAppearances: 0,
+          uniqueViewers: 0,
+
+          // New meaningful metrics
+          profileStrength: profileStrength.score,
+          networkQuality: networkQuality.score,
+          socialActivity: socialActivity.score,
+          contentPerformance: contentPerformance.score,
+
+          // Detailed breakdowns
+          profileAnalysis: profileStrength,
+          networkAnalysis: networkQuality,
+          socialAnalysis: socialActivity,
+          contentAnalysis: contentPerformance,
+
+          // Keep existing working metrics
+          totalConnections: connectionsData?.count || 0,
+          totalPosts: memberShareData?.count || 0,
+          likesGiven: likesData?.count || 0,
+        };
+
+        console.log("Final metrics result:", result);
+        return result;
+      } catch (analyticsError) {
+        console.error("Analytics calculation error:", analyticsError);
+        console.error(
+          "Analytics error stack:",
+          analyticsError instanceof Error
+            ? analyticsError.stack
+            : "No stack trace"
+        );
+        throw analyticsError;
+      }
     } catch (error) {
-      console.error('Error fetching profile metrics:', error);
+      console.error("Error fetching profile metrics:", error);
+      console.error(
+        "Error stack:",
+        error instanceof Error ? error.stack : "No stack trace"
+      );
       return this.getDefaultMetrics();
     }
   }
 
   private async fetchDomainData(domain: string): Promise<any> {
-    const response = await fetch(`/.netlify/functions/linkedin-snapshot?domain=${domain}`);
-    const data = await response.json();
-    return data.elements?.[0] || { count: 0, sample: null };
+    try {
+      console.log(`Fetching domain data for: ${domain}`);
+      const response = await fetch(
+        `/.netlify/functions/linkedin-snapshot?domain=${domain}`
+      );
+      
+      if (!response.ok) {
+        console.error(`Error fetching ${domain}: HTTP ${response.status} ${response.statusText}`);
+        return { count: 0, sample: null };
+      }
+      
+      const data = await response.json();
+      console.log(`${domain} API response:`, {
+        status: response.status,
+        hasElements: !!data.elements,
+        elementsLength: data.elements?.length,
+        firstElement: data.elements?.[0],
+        snapshotDataLength: data.elements?.[0]?.snapshotData?.length
+      });
+      
+      const result = data.elements?.[0] || { count: 0, sample: null };
+      console.log(`${domain} processed result:`, {
+        count: result.count,
+        hasSample: !!result.sample,
+        sampleKeys: result.sample ? Object.keys(result.sample) : []
+      });
+      
+      return result;
+    } catch (error) {
+      console.error(`Error fetching ${domain} domain data:`, error);
+      return { count: 0, sample: null };
+    }
   }
 
   private async fetchChangelogData(): Promise<any> {
-    const response = await fetch('/.netlify/functions/linkedin-changelog?count=100');
-    return response.json();
+    try {
+      console.log('Fetching changelog data...');
+      const response = await fetch(
+        "/.netlify/functions/linkedin-changelog?count=100"
+      );
+      
+      if (!response.ok) {
+        console.error(`Error fetching changelog: HTTP ${response.status} ${response.statusText}`);
+        return { elements: [] };
+      }
+      
+      const data = await response.json();
+      console.log('Changelog API response:', {
+        status: response.status,
+        hasElements: !!data.elements,
+        elementsLength: data.elements?.length,
+        firstElement: data.elements?.[0]
+      });
+      
+      return data;
+    } catch (error) {
+      console.error('Error fetching changelog data:', error);
+      return { elements: [] };
+    }
   }
 
   private getDefaultMetrics(): any {
@@ -386,7 +506,7 @@ export class LinkedInDataService {
       contentPerformance: 0,
       totalConnections: 0,
       totalPosts: 0,
-      likesGiven: 0
+      likesGiven: 0,
     };
   }
 }
