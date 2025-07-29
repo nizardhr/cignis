@@ -27,6 +27,15 @@ export const Dashboard = () => {
     }
   };
 
+  // Add test function to check data flow
+  const testDataFlow = async () => {
+    console.log("Testing data flow...");
+    console.log("DMA Token present:", !!dmaToken);
+    console.log("Dashboard data:", dashboardData);
+    console.log("Loading state:", isLoading);
+    console.log("Error state:", error);
+  };
+
   if (!dmaToken) {
     return (
       <motion.div
@@ -54,8 +63,10 @@ export const Dashboard = () => {
 
   if (isLoading || !dashboardData) {
     return (
-      <div className="flex items-center justify-center h-64">
+      <div className="flex flex-col items-center justify-center h-64">
         <LoadingSpinner size="lg" />
+        <p className="mt-4 text-gray-600">Loading LinkedIn analytics...</p>
+        <p className="text-sm text-gray-500">This may take a moment for larger accounts</p>
       </div>
     );
   }
@@ -81,6 +92,12 @@ export const Dashboard = () => {
           >
             {debugMode ? "Hide" : "Show"} Debug Info
           </Button>
+          <Button
+            variant="ghost"
+            onClick={testDataFlow}
+          >
+            Test Data Flow
+          </Button>
         </div>
         {debugMode && (
           <div className="mt-6 p-4 bg-gray-100 rounded-lg text-left">
@@ -101,6 +118,33 @@ export const Dashboard = () => {
       transition={{ duration: 0.5 }}
       className="space-y-6"
     >
+      {/* Header with Debug Controls */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold">Dashboard</h2>
+          <p className="text-gray-600 mt-1">LinkedIn profile evaluation and key metrics</p>
+        </div>
+        <div className="flex space-x-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setDebugMode(!debugMode)}
+          >
+            <Database size={14} className="mr-1" />
+            {debugMode ? "Hide" : "Show"} Debug
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRefetch}
+            disabled={isRefetching}
+          >
+            <RefreshCw size={14} className={`mr-1 ${isRefetching ? 'animate-spin' : ''}`} />
+            {isRefetching ? "Refreshing..." : "Refresh"}
+          </Button>
+        </div>
+      </div>
+
       {/* Debug Panel */}
       {debugMode && dashboardData && (
         <Card variant="glass" className="p-4 bg-blue-50 border-blue-200">
@@ -119,6 +163,7 @@ export const Dashboard = () => {
           </div>
           <div className="text-sm space-y-2">
             <div>Last Updated: {dashboardData.lastUpdated}</div>
+            <div>DMA Token: {dmaToken ? 'Present' : 'Missing'}</div>
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <strong>Profile Evaluation:</strong>
@@ -137,6 +182,15 @@ export const Dashboard = () => {
               <strong>Mini Trends:</strong>
               <div>Posts: {dashboardData.miniTrends.posts.map(p => p.value).join(', ')}</div>
               <div>Engagements: {dashboardData.miniTrends.engagements.map(e => e.value).join(', ')}</div>
+            </div>
+            <div className="mt-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={testDataFlow}
+              >
+                Test Data Flow
+              </Button>
             </div>
           </div>
         </Card>
@@ -162,23 +216,6 @@ export const Dashboard = () => {
             <Zap className="mr-2" size={20} />
             Quick Actions
           </h3>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleRefetch}
-            disabled={isRefetching}
-          >
-            <RefreshCw size={14} className={`mr-1 ${isRefetching ? 'animate-spin' : ''}`} />
-            {isRefetching ? "Refreshing..." : "Refresh Data"}
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setDebugMode(!debugMode)}
-          >
-            <Database size={14} className="mr-1" />
-            {debugMode ? "Hide" : "Show"} Debug
-          </Button>
         </div>
         <div className="space-y-3">
           <motion.button

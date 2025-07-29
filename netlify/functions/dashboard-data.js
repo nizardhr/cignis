@@ -20,7 +20,7 @@ export async function handler(event, context) {
   }
 
   try {
-    console.log("Dashboard Data: Starting comprehensive analysis");
+    console.log("Dashboard Data: Starting analysis with DMA token");
 
     // Fetch all required data in parallel
     const [
@@ -30,8 +30,7 @@ export async function handler(event, context) {
       changelogData,
       skillsData,
       positionsData,
-      educationData,
-      allCommentsData
+      educationData
     ] = await Promise.all([
       fetchLinkedInData(authorization, "linkedin-snapshot", "PROFILE"),
       fetchLinkedInData(authorization, "linkedin-snapshot", "CONNECTIONS"),
@@ -39,11 +38,18 @@ export async function handler(event, context) {
       fetchLinkedInData(authorization, "linkedin-changelog", null, "count=100"),
       fetchLinkedInData(authorization, "linkedin-snapshot", "SKILLS"),
       fetchLinkedInData(authorization, "linkedin-snapshot", "POSITIONS"),
-      fetchLinkedInData(authorization, "linkedin-snapshot", "EDUCATION"),
-      fetchLinkedInData(authorization, "linkedin-snapshot", "ALL_COMMENTS")
+      fetchLinkedInData(authorization, "linkedin-snapshot", "EDUCATION")
     ]);
 
-    console.log("Dashboard Data: All data fetched successfully");
+    console.log("Dashboard Data: Raw data received:", {
+      profile: !!profileData,
+      connections: !!connectionsData,
+      posts: !!postsData,
+      changelog: !!changelogData,
+      skills: !!skillsData,
+      positions: !!positionsData,
+      education: !!educationData
+    });
 
     // Calculate profile evaluation scores
     const profileEvaluation = calculateProfileEvaluation({
@@ -53,8 +59,7 @@ export async function handler(event, context) {
       changelogData,
       skillsData,
       positionsData,
-      educationData,
-      allCommentsData
+      educationData
     });
 
     // Calculate summary KPIs
@@ -74,7 +79,11 @@ export async function handler(event, context) {
       lastUpdated: new Date().toISOString()
     };
 
-    console.log("Dashboard Data: Analysis complete", result);
+    console.log("Dashboard Data: Analysis complete", {
+      overallScore: result.profileEvaluation.overallScore,
+      totalConnections: result.summaryKPIs.totalConnections,
+      posts30d: result.summaryKPIs.postsLast30Days
+    });
 
     return {
       statusCode: 200,
@@ -121,6 +130,8 @@ async function fetchLinkedInData(authorization, endpoint, domain = null, extraPa
       url += `?${params.toString()}`;
     }
 
+    console.log(`Fetching LinkedIn data: ${url}`);
+
     const response = await fetch(url, {
       headers: {
         Authorization: authorization,
@@ -129,11 +140,19 @@ async function fetchLinkedInData(authorization, endpoint, domain = null, extraPa
     });
 
     if (!response.ok) {
-      console.warn(`Failed to fetch ${endpoint} ${domain}: ${response.status}`);
+      console.error(`Failed to fetch ${endpoint} ${domain}: ${response.status} ${response.statusText}`);
       return null;
     }
 
-    return await response.json();
+    const data = await response.json();
+    console.log(`${endpoint} ${domain} response:`, {
+      hasElements: !!data.elements,
+      elementsLength: data.elements?.length,
+      hasSnapshotData: !!data.elements?.[0]?.snapshotData,
+      snapshotDataLength: data.elements?.[0]?.snapshotData?.length
+    });
+    
+    return data;
   } catch (error) {
     console.error(`Error fetching ${endpoint} ${domain}:`, error);
     return null;
@@ -148,8 +167,7 @@ function calculateProfileEvaluation(data) {
     changelogData,
     skillsData,
     positionsData,
-    educationData,
-    allCommentsData
+    educationData
   } = data;
 
   console.log("Calculating profile evaluation with data:", {
@@ -159,8 +177,7 @@ function calculateProfileEvaluation(data) {
     hasChangelog: !!changelogData,
     hasSkills: !!skillsData,
     hasPositions: !!positionsData,
-    hasEducation: !!educationData,
-    hasComments: !!allCommentsData
+    hasEducation: !!educationData
   });
 
   const scores = {};
@@ -192,7 +209,7 @@ function calculateProfileEvaluation(data) {
   scores.engagementRate = calculateEngagementRate(postsData, changelogData, connectionsData);
 
   // 8. Mutual Interactions (0-10)
-  scores.mutualInteractions = calculateMutualInteractions(changelogData, allCommentsData);
+  scores.mutualInteractions = calculateMutualInteractions(changelogData);
 
   // 9. Profile Visibility Signals (0-10)
   scores.profileVisibility = calculateProfileVisibility(profileData);
@@ -203,6 +220,8 @@ function calculateProfileEvaluation(data) {
     postsData,
     positionsData
   });
+
+  console.log("Calculated scores:", scores);
 
   // Calculate overall score
   const overallScore = Object.values(scores).reduce((sum, score) => sum + score, 0) / 10;
@@ -216,10 +235,20 @@ function calculateProfileEvaluation(data) {
 
 function calculateProfileCompleteness({ profileData, skillsData, positionsData, educationData }) {
   let score = 0;
+  
+  console.log("Profile completeness calculation:", {
+    profileData: profileData?.elements?.[0]?.snapshotData?.length,
+    skillsData: skillsData?.elements?.[0]?.snapshotData?.length,
+    positionsData: positionsData?.elements?.[0]?.snapshotData?.length,
+    educationData: educationData?.elements?.[0]?.snapshotData?.length
+  });
+  
   const profileSnapshot = profileData?.elements?.[0]?.snapshotData || [];
   
   // LinkedIn profile data might be an array, find the main profile entry
   const profile = profileSnapshot.find(p => p["First Name"] || p["Last Name"]) || profileSnapshot[0] || {};
+  
+  console.log("Profile data found:", Object.keys(profile));
   
   // Basic info (4 points)
   if (profile["First Name"]) score += 1;
@@ -239,16 +268,29 @@ function calculateProfileCompleteness({ profileData, skillsData, positionsData, 
   const educationCount = educationData?.elements?.[0]?.snapshotData?.length || 0;
   score += Math.min(educationCount, 2); // 2 points for education entries
   
+  console.log("Profile completeness score:", score, {
+    basicInfo: (profile["First Name"] ? 1 : 0) + (profile["Last Name"] ? 1 : 0) + (profile["Headline"] ? 1 : 0) + (profile["Industry"] ? 1 : 0),
+    skills: Math.min(skillsCount / 5, 2),
+    positions: Math.min(positionsCount / 2, 2),
+    education: Math.min(educationCount, 2)
+  });
+  
   return Math.min(Math.round(score), 10);
 }
 
 function calculatePostingActivity(postsData, changelogData) {
+  console.log("Calculating posting activity...");
+  
   const posts = changelogData?.elements?.filter(e => 
     e.resourceName === "ugcPosts" && e.method === "CREATE"
   ) || [];
   
+  console.log("Found posts in changelog:", posts.length);
+  
   const last30Days = Date.now() - (30 * 24 * 60 * 60 * 1000);
   const recentPosts = posts.filter(p => p.capturedAt >= last30Days);
+  
+  console.log("Recent posts (30d):", recentPosts.length);
   
   // Score based on posting frequency (0-10)
   if (recentPosts.length >= 20) return 10;
@@ -260,15 +302,25 @@ function calculatePostingActivity(postsData, changelogData) {
 }
 
 function calculateEngagementQuality(changelogData) {
+  console.log("Calculating engagement quality...");
+  
   const elements = changelogData?.elements || [];
   
   const likes = elements.filter(e => e.resourceName === "socialActions/likes" && e.method === "CREATE");
   const comments = elements.filter(e => e.resourceName === "socialActions/comments" && e.method === "CREATE");
   const posts = elements.filter(e => e.resourceName === "ugcPosts" && e.method === "CREATE");
   
+  console.log("Engagement data:", {
+    likes: likes.length,
+    comments: comments.length,
+    posts: posts.length
+  });
+  
   if (posts.length === 0) return 0;
   
   const avgEngagement = (likes.length + comments.length) / posts.length;
+  
+  console.log("Average engagement per post:", avgEngagement);
   
   // Score based on average engagement per post
   if (avgEngagement >= 20) return 10;
@@ -280,12 +332,17 @@ function calculateEngagementQuality(changelogData) {
 }
 
 function calculateNetworkGrowth(connectionsData, changelogData) {
+  console.log("Calculating network growth...");
+  
   const connections = connectionsData?.elements?.[0]?.snapshotData || [];
+  console.log("Total connections:", connections.length);
   
   // Also check changelog for invitation acceptances
   const invitations = changelogData?.elements?.filter(e => 
     e.resourceName === "invitations" && e.method === "CREATE"
   ) || [];
+  
+  console.log("Invitations in changelog:", invitations.length);
   
   const last30Days = Date.now() - (30 * 24 * 60 * 60 * 1000);
   
@@ -300,6 +357,12 @@ function calculateNetworkGrowth(connectionsData, changelogData) {
   
   const totalRecentGrowth = recentConnections.length + recentInvitations.length;
   
+  console.log("Network growth (30d):", {
+    recentConnections: recentConnections.length,
+    recentInvitations: recentInvitations.length,
+    total: totalRecentGrowth
+  });
+  
   // Score based on recent growth
   if (totalRecentGrowth >= 50) return 10;
   if (totalRecentGrowth >= 30) return 8;
@@ -310,7 +373,10 @@ function calculateNetworkGrowth(connectionsData, changelogData) {
 }
 
 function calculateAudienceRelevance(connectionsData) {
+  console.log("Calculating audience relevance...");
+  
   const connections = connectionsData?.elements?.[0]?.snapshotData || [];
+  console.log("Processing connections for audience relevance:", connections.length);
   
   // Calculate industry diversity
   const industries = {};
@@ -321,6 +387,12 @@ function calculateAudienceRelevance(connectionsData) {
   
   const industryCount = Object.keys(industries).length;
   const totalConnections = connections.length;
+  
+  console.log("Industry diversity:", {
+    uniqueIndustries: industryCount,
+    totalConnections,
+    topIndustries: Object.entries(industries).sort(([,a], [,b]) => b - a).slice(0, 3)
+  });
   
   if (totalConnections === 0) return 0;
   
@@ -333,15 +405,28 @@ function calculateAudienceRelevance(connectionsData) {
   const professionalRatio = professionalConnections / totalConnections;
   const professionalScore = professionalRatio * 5; // 0-5 points
   
+  console.log("Audience relevance score:", {
+    diversityScore,
+    professionalScore,
+    total: Math.round(diversityScore + professionalScore)
+  });
+  
   return Math.round(diversityScore + professionalScore);
 }
 
 function calculateContentDiversity(postsData, changelogData) {
+  console.log("Calculating content diversity...");
+  
   // Check both snapshot and changelog data for content types
   const snapshotPosts = postsData?.elements?.[0]?.snapshotData || [];
   const posts = changelogData?.elements?.filter(e => 
     e.resourceName === "ugcPosts" && e.method === "CREATE"
   ) || [];
+  
+  console.log("Content diversity data:", {
+    snapshotPosts: snapshotPosts.length,
+    changelogPosts: posts.length
+  });
   
   const totalPosts = posts.length + snapshotPosts.length;
   if (totalPosts === 0) return 0;
@@ -389,11 +474,15 @@ function calculateContentDiversity(postsData, changelogData) {
   
   const typeCount = Object.values(contentTypes).filter(count => count > 0).length;
   
+  console.log("Content types breakdown:", contentTypes, "Unique types:", typeCount);
+  
   // Score based on content type diversity
   return Math.min(typeCount * 2.5, 10);
 }
 
 function calculateEngagementRate(postsData, changelogData, connectionsData) {
+  console.log("Calculating engagement rate...");
+  
   const posts = changelogData?.elements?.filter(e => 
     e.resourceName === "ugcPosts" && e.method === "CREATE"
   ) || [];
@@ -409,9 +498,19 @@ function calculateEngagementRate(postsData, changelogData, connectionsData) {
   const totalConnections = connectionsData?.elements?.[0]?.snapshotData?.length || 1;
   const totalEngagement = likes.length + comments.length;
   
+  console.log("Engagement rate calculation:", {
+    posts: posts.length,
+    likes: likes.length,
+    comments: comments.length,
+    totalConnections,
+    totalEngagement
+  });
+  
   if (posts.length === 0) return 0;
   
   const engagementRate = (totalEngagement / posts.length / totalConnections) * 100;
+  
+  console.log("Calculated engagement rate:", engagementRate);
   
   // Score based on engagement rate
   if (engagementRate >= 5) return 10;
@@ -422,7 +521,9 @@ function calculateEngagementRate(postsData, changelogData, connectionsData) {
   return 0;
 }
 
-function calculateMutualInteractions(changelogData, allCommentsData) {
+function calculateMutualInteractions(changelogData) {
+  console.log("Calculating mutual interactions...");
+  
   const elements = changelogData?.elements || [];
   
   // Comments given by user (from changelog)
@@ -433,10 +534,13 @@ function calculateMutualInteractions(changelogData, allCommentsData) {
     e.resourceName === "socialActions/comments" && e.method === "CREATE"
   );
   
-  // Comments from snapshot (ALL_COMMENTS domain)
-  const snapshotComments = allCommentsData?.elements?.[0]?.snapshotData?.length || 0;
+  const totalInteractions = myLikes.length + myComments.length;
   
-  const totalInteractions = myLikes.length + myComments.length + snapshotComments;
+  console.log("Mutual interactions:", {
+    likes: myLikes.length,
+    comments: myComments.length,
+    total: totalInteractions
+  });
   
   // Score based on giving engagement to others
   if (totalInteractions >= 100) return 10;
@@ -448,13 +552,19 @@ function calculateMutualInteractions(changelogData, allCommentsData) {
 }
 
 function calculateProfileVisibility(profileData) {
+  console.log("Calculating profile visibility...");
+  
   const profileSnapshot = profileData?.elements?.[0]?.snapshotData || [];
   const profile = profileSnapshot.find(p => p["Profile Views"] || p["Search Appearances"]) || profileSnapshot[0] || {};
+  
+  console.log("Profile visibility data:", Object.keys(profile));
   
   let score = 0;
   
   // Profile views (if available)
   const profileViews = parseInt(profile["Profile Views"] || "0");
+  console.log("Profile views:", profileViews);
+  
   if (profileViews >= 1000) score += 4;
   else if (profileViews >= 500) score += 3;
   else if (profileViews >= 100) score += 2;
@@ -462,6 +572,8 @@ function calculateProfileVisibility(profileData) {
   
   // Search appearances (if available)
   const searchAppearances = parseInt(profile["Search Appearances"] || "0");
+  console.log("Search appearances:", searchAppearances);
+  
   if (searchAppearances >= 100) score += 3;
   else if (searchAppearances >= 50) score += 2;
   else if (searchAppearances >= 10) score += 1;
@@ -471,13 +583,23 @@ function calculateProfileVisibility(profileData) {
   if (profile.Industry) score += 1;
   if (profile.Location) score += 1;
   
+  console.log("Profile visibility score:", score);
+  
   return Math.min(score, 10);
 }
 
 function calculateProfessionalBrand(data) {
+  console.log("Calculating professional brand...");
+  
   const { profileData, postsData, positionsData } = data;
   const profileSnapshot = profileData?.elements?.[0]?.snapshotData || [];
   const profile = profileSnapshot.find(p => p["First Name"] || p["Last Name"]) || profileSnapshot[0] || {};
+  
+  console.log("Professional brand data:", {
+    hasHeadline: !!profile.Headline,
+    hasIndustry: !!profile.Industry,
+    positionsCount: positionsData?.elements?.[0]?.snapshotData?.length || 0
+  });
   
   let score = 0;
   
@@ -506,13 +628,18 @@ function calculateProfessionalBrand(data) {
   
   if (professionalPosts.length / Math.max(posts.length, 1) >= 0.5) score += 2;
   
+  console.log("Professional brand score:", score);
+  
   return Math.min(score, 10);
 }
 
 function calculateSummaryKPIs(data) {
+  console.log("Calculating summary KPIs...");
+  
   const { connectionsData, postsData, changelogData } = data;
   
   const totalConnections = connectionsData?.elements?.[0]?.snapshotData?.length || 0;
+  console.log("Total connections:", totalConnections);
   
   const last30Days = Date.now() - (30 * 24 * 60 * 60 * 1000);
   
@@ -522,6 +649,8 @@ function calculateSummaryKPIs(data) {
     e.method === "CREATE" && 
     e.capturedAt >= last30Days
   ) || [];
+  
+  console.log("Recent posts (30d):", recentPosts.length);
   
   // Connections added last 30 days
   const connections = connectionsData?.elements?.[0]?.snapshotData || [];
@@ -537,6 +666,11 @@ function calculateSummaryKPIs(data) {
     e.capturedAt >= last30Days
   ) || [];
   
+  console.log("Recent connections:", {
+    fromSnapshot: recentConnections.length,
+    fromInvitations: recentInvitations.length
+  });
+  
   // Engagement rate
   const likes = changelogData?.elements?.filter(e => 
     e.resourceName === "socialActions/likes" && e.method === "CREATE"
@@ -549,16 +683,29 @@ function calculateSummaryKPIs(data) {
   const engagementRate = recentPosts.length > 0 ? 
     ((totalEngagement / recentPosts.length) * 100).toFixed(1) : "0";
   
-  return {
+  console.log("Engagement calculation:", {
+    likes: likes.length,
+    comments: comments.length,
+    totalEngagement,
+    engagementRate
+  });
+  
+  const kpis = {
     totalConnections,
     postsLast30Days: recentPosts.length,
     engagementRate: `${engagementRate}%`,
     connectionsLast30Days: recentConnections.length + recentInvitations.length
   };
+  
+  console.log("Summary KPIs:", kpis);
+  return kpis;
 }
 
 function calculateMiniTrends(changelogData) {
+  console.log("Calculating mini trends...");
+  
   const elements = changelogData?.elements || [];
+  console.log("Changelog elements for trends:", elements.length);
   
   // Get last 7 days of data
   const last7Days = [];
@@ -590,7 +737,7 @@ function calculateMiniTrends(changelogData) {
     }
   });
   
-  return {
+  const trends = {
     posts: last7Days.map((day, index) => ({ 
       date: `Day ${index + 1}`, 
       value: day.posts 
@@ -600,6 +747,9 @@ function calculateMiniTrends(changelogData) {
       value: day.engagements 
     }))
   };
+  
+  console.log("Mini trends:", trends);
+  return trends;
 }
 
 function getScoreExplanations() {

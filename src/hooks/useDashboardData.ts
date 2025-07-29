@@ -48,6 +48,10 @@ export const useDashboardData = () => {
     queryFn: async (): Promise<DashboardData> => {
       console.log('Fetching dashboard data with token:', dmaToken ? 'present' : 'missing');
       
+      if (!dmaToken) {
+        throw new Error('DMA token is required for dashboard data');
+      }
+      
       const response = await fetch('/.netlify/functions/dashboard-data', {
         headers: {
           'Authorization': `Bearer ${dmaToken}`,
@@ -60,11 +64,18 @@ export const useDashboardData = () => {
       if (!response.ok) {
         const errorText = await response.text();
         console.error('Dashboard API error:', response.status, errorText);
-        throw new Error('Failed to fetch dashboard data');
+        throw new Error(`Dashboard API error: ${response.status} - ${errorText}`);
       }
 
       const data = await response.json();
       console.log('Dashboard data received:', data);
+      
+      // Validate the response structure
+      if (!data.profileEvaluation || !data.summaryKPIs || !data.miniTrends) {
+        console.error('Invalid dashboard data structure:', data);
+        throw new Error('Invalid dashboard data structure received');
+      }
+      
       return data;
     },
     enabled: !!dmaToken,
@@ -72,5 +83,11 @@ export const useDashboardData = () => {
     gcTime: 30 * 60 * 1000, // 30 minutes
     retry: 2,
     refetchOnWindowFocus: false,
+    onError: (error) => {
+      console.error('Dashboard data query error:', error);
+    },
+    onSuccess: (data) => {
+      console.log('Dashboard data query success:', data);
+    }
   });
 };
