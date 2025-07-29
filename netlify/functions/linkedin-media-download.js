@@ -46,6 +46,7 @@ export async function handler(event, context) {
   }
 
   try {
+    // Try the correct LinkedIn media download endpoint
     const url = `https://api.linkedin.com/v2/assets/${assetId}`;
     console.log("LinkedIn Media Download Function - Calling URL:", url);
     console.log("LinkedIn Media Download Function - Using auth token:", authToken ? "present" : "missing");
@@ -54,6 +55,7 @@ export async function handler(event, context) {
       headers: {
         Authorization: authToken,
         "LinkedIn-Version": "202312",
+        "Accept": "*/*",
       },
     });
 
@@ -70,15 +72,16 @@ export async function handler(event, context) {
       const errorText = await response.text();
       console.log("LinkedIn Media Download Function - Error response body:", errorText);
       
-      // Try alternative endpoint if first one fails
+      // Try the direct media download endpoint if assets endpoint fails
       console.log("LinkedIn Media Download Function - Trying alternative endpoint...");
-      const altUrl = `https://api.linkedin.com/mediaDownload/${assetId}`;
+      const altUrl = `https://api.linkedin.com/v2/mediaDownload/${assetId}`;
       console.log("LinkedIn Media Download Function - Alternative URL:", altUrl);
       
       const altResponse = await fetch(altUrl, {
         headers: {
           Authorization: authToken,
           "LinkedIn-Version": "202312",
+          "Accept": "*/*",
         },
       });
       
@@ -88,17 +91,63 @@ export async function handler(event, context) {
         const altErrorText = await altResponse.text();
         console.log("LinkedIn Media Download Function - Alternative error response:", altErrorText);
         
+        // Try the third endpoint - direct asset download
+        console.log("LinkedIn Media Download Function - Trying third endpoint...");
+        const thirdUrl = `https://api.linkedin.com/mediaDownload/${assetId}`;
+        console.log("LinkedIn Media Download Function - Third URL:", thirdUrl);
+        
+        const thirdResponse = await fetch(thirdUrl, {
+          headers: {
+            Authorization: authToken,
+            "LinkedIn-Version": "202312",
+            "Accept": "*/*",
+          },
+        });
+        
+        console.log("LinkedIn Media Download Function - Third response status:", thirdResponse.status);
+        
+        if (!thirdResponse.ok) {
+          const thirdErrorText = await thirdResponse.text();
+          console.log("LinkedIn Media Download Function - Third error response:", thirdErrorText);
+          
+          return {
+            statusCode: thirdResponse.status,
+            headers: {
+              "Content-Type": "application/json",
+              "Access-Control-Allow-Origin": "*",
+            },
+            body: JSON.stringify({
+              error: "Failed to download LinkedIn media from all endpoints",
+              details: `Primary: ${response.status} ${response.statusText}, Alternative: ${altResponse.status} ${altResponse.statusText}, Third: ${thirdResponse.status} ${thirdResponse.statusText}`,
+              primaryError: errorText,
+              alternativeError: altErrorText,
+              thirdError: thirdErrorText,
+              assetId: assetId,
+              endpoints: [url, altUrl, thirdUrl]
+            }),
+          };
+        }
+        
+        // Use third response if successful
+        const thirdImageBuffer = await thirdResponse.arrayBuffer();
+        const thirdContentType = thirdResponse.headers.get('content-type') || 'image/jpeg';
+        
+        console.log("LinkedIn Media Download Function - Third endpoint success, image size:", thirdImageBuffer.byteLength, "bytes");
+        
+        const thirdBase64Image = Buffer.from(thirdImageBuffer).toString('base64');
+        const thirdDataUrl = `data:${thirdContentType};base64,${thirdBase64Image}`;
+        
         return {
           statusCode: altResponse.status,
           headers: {
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
-          },
           body: JSON.stringify({
-            error: "Failed to download LinkedIn media",
-            details: `Primary: ${response.status} ${response.statusText}, Alternative: ${altResponse.status} ${altResponse.statusText}`,
-            primaryError: errorText,
-            alternativeError: altErrorText
+            success: true,
+            dataUrl: thirdDataUrl,
+            contentType: thirdContentType,
+            size: thirdImageBuffer.byteLength,
+            source: "third"
           }),
         };
       }
