@@ -43,7 +43,9 @@ function App() {
       dmaToken: dmaTokenParam ? 'present' : 'missing',
       hasAuthParams,
       currentBasicAuth: isBasicAuthenticated,
-      currentFullAuth: isFullyAuthenticated
+      currentFullAuth: isFullyAuthenticated,
+      storedAccessToken: accessToken ? 'present' : 'missing',
+      storedDmaToken: dmaToken ? 'present' : 'missing'
     });
     console.log('App useEffect - hasAuthParams:', hasAuthParams);
     console.log('App useEffect - isBasicAuthenticated:', isBasicAuthenticated);
@@ -60,6 +62,16 @@ function App() {
       </div>
     );
   }
+
+  // Debug auth state
+  console.log('App render - Auth Debug:', {
+    accessToken: accessToken ? 'present' : 'missing',
+    dmaToken: dmaToken ? 'present' : 'missing',
+    isBasicAuthenticated,
+    isFullyAuthenticated,
+    shouldShowDashboard: isBasicAuthenticated && isFullyAuthenticated
+  });
+
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
@@ -89,7 +101,7 @@ function App() {
             }
             
             // Show Dashboard if fully authenticated
-            if (isFullyAuthenticated) {
+            if (isBasicAuthenticated && isFullyAuthenticated && dmaToken) {
               console.log('App render - showing Dashboard');
               return (
                 <div className="flex h-screen">

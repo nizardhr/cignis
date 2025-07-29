@@ -43,9 +43,16 @@ export const useAuthStore = create<AuthState>()(
         accessToken: state.accessToken,
         dmaToken: state.dmaToken,
         profile: state.profile,
-        isBasicAuthenticated: state.isBasicAuthenticated,
-        isFullyAuthenticated: state.isFullyAuthenticated,
+        isBasicAuthenticated: !!state.accessToken,
+        isFullyAuthenticated: !!(state.accessToken && state.dmaToken),
       }),
+      onRehydrateStorage: () => (state) => {
+        if (state) {
+          // Recalculate auth states on rehydration
+          state.isBasicAuthenticated = !!state.accessToken;
+          state.isFullyAuthenticated = !!(state.accessToken && state.dmaToken);
+        }
+      },
     }
   )
 );

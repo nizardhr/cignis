@@ -13,14 +13,19 @@ export async function handler(event, context) {
   const { authorization } = event.headers;
 
   if (!authorization) {
+    console.log("Dashboard Data: No authorization header");
     return {
       statusCode: 401,
       body: JSON.stringify({ error: "No authorization token" }),
     };
   }
 
+  // Extract token from Bearer header
+  const token = authorization.replace('Bearer ', '');
+  console.log("Dashboard Data: Token present:", !!token, "Length:", token.length);
+
   try {
-    console.log("Dashboard Data: Starting analysis with DMA token");
+    console.log("Dashboard Data: Starting analysis");
 
     // Fetch all required data in parallel
     const [
@@ -42,13 +47,13 @@ export async function handler(event, context) {
     ]);
 
     console.log("Dashboard Data: Raw data received:", {
-      profile: !!profileData,
-      connections: !!connectionsData,
-      posts: !!postsData,
-      changelog: !!changelogData,
-      skills: !!skillsData,
-      positions: !!positionsData,
-      education: !!educationData
+      profile: profileData ? `${profileData.elements?.[0]?.snapshotData?.length || 0} items` : 'null',
+      connections: connectionsData ? `${connectionsData.elements?.[0]?.snapshotData?.length || 0} items` : 'null',
+      posts: postsData ? `${postsData.elements?.[0]?.snapshotData?.length || 0} items` : 'null',
+      changelog: changelogData ? `${changelogData.elements?.length || 0} events` : 'null',
+      skills: skillsData ? `${skillsData.elements?.[0]?.snapshotData?.length || 0} items` : 'null',
+      positions: positionsData ? `${positionsData.elements?.[0]?.snapshotData?.length || 0} items` : 'null',
+      education: educationData ? `${educationData.elements?.[0]?.snapshotData?.length || 0} items` : 'null'
     });
 
     // Calculate profile evaluation scores
@@ -139,8 +144,11 @@ async function fetchLinkedInData(authorization, endpoint, domain = null, extraPa
       },
     });
 
+    console.log(`${endpoint} ${domain} response status:`, response.status);
+
     if (!response.ok) {
-      console.error(`Failed to fetch ${endpoint} ${domain}: ${response.status} ${response.statusText}`);
+      const errorText = await response.text();
+      console.error(`Failed to fetch ${endpoint} ${domain}: ${response.status} ${response.statusText}`, errorText);
       return null;
     }
 
@@ -149,7 +157,8 @@ async function fetchLinkedInData(authorization, endpoint, domain = null, extraPa
       hasElements: !!data.elements,
       elementsLength: data.elements?.length,
       hasSnapshotData: !!data.elements?.[0]?.snapshotData,
-      snapshotDataLength: data.elements?.[0]?.snapshotData?.length
+      snapshotDataLength: data.elements?.[0]?.snapshotData?.length,
+      firstSnapshotItem: data.elements?.[0]?.snapshotData?.[0] ? Object.keys(data.elements[0].snapshotData[0]) : null
     });
     
     return data;

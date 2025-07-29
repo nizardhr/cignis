@@ -31,9 +31,28 @@ export const Dashboard = () => {
   const testDataFlow = async () => {
     console.log("Testing data flow...");
     console.log("DMA Token present:", !!dmaToken);
+    console.log("DMA Token value:", dmaToken ? dmaToken.substring(0, 20) + "..." : "null");
     console.log("Dashboard data:", dashboardData);
     console.log("Loading state:", isLoading);
     console.log("Error state:", error);
+    
+    // Test direct API call
+    if (dmaToken) {
+      try {
+        console.log("Testing direct API call...");
+        const response = await fetch('/.netlify/functions/dashboard-data', {
+          headers: {
+            'Authorization': `Bearer ${dmaToken}`,
+            'Content-Type': 'application/json',
+          },
+        });
+        console.log("Direct API response status:", response.status);
+        const data = await response.json();
+        console.log("Direct API response data:", data);
+      } catch (apiError) {
+        console.error("Direct API call failed:", apiError);
+      }
+    }
   };
 
   if (!dmaToken) {
@@ -45,16 +64,16 @@ export const Dashboard = () => {
         className="space-y-6"
       >
         <div className="text-center py-12">
+          <AlertCircle size={48} className="mx-auto text-orange-400 mb-4" />
           <h2 className="text-2xl font-bold mb-4">Limited Access Mode</h2>
           <p className="text-gray-600 mb-6">
-            You have basic LinkedIn access. Enable data access permissions for
-            full analytics and insights.
+            DMA token is missing. You need to complete the DMA authentication flow to access dashboard features.
           </p>
           <Button
             variant="primary"
             onClick={() => (window.location.href = "/")}
           >
-            Enable Full Access
+            Complete DMA Authentication
           </Button>
         </div>
       </motion.div>
