@@ -223,33 +223,27 @@ export const calculateContentPerformance = (memberShareData: any) => {
 
   // Calculate posting frequency
   const postDates = posts
-    .map((post) => new Date(post.Date))
-    .filter((date) => !isNaN(date.getTime()))
+    .map((p) => new Date(p.Date))
     .sort((a, b) => b.getTime() - a.getTime());
 
-  const daysSinceFirst =
-    postDates.length > 1
-      ? (postDates[0].getTime() - postDates[postDates.length - 1].getTime()) /
+  const daysBetweenPosts: number[] = [];
+
+  for (let i = 1; i < postDates.length; i++) {
+    const days = Math.floor(
+      (postDates[i - 1].getTime() - postDates[i].getTime()) /
         (1000 * 60 * 60 * 24)
-      : 0;
+    );
+    daysBetweenPosts.push(days);
+  }
 
-  const postsPerWeek =
-    daysSinceFirst > 0 ? (totalPosts / daysSinceFirst) * 7 : 0;
+  const avgDaysBetweenPosts =
+    daysBetweenPosts.length > 0
+      ? (
+          daysBetweenPosts.reduce((a, b) => a + b) / daysBetweenPosts.length
+        ).toFixed(1)
+      : "0";
 
-  console.log("Posting frequency analysis:", {
-    postDatesLength: postDates.length,
-    daysSinceFirst,
-    postsPerWeek,
-  });
-
-  // Calculate content quality score
-  const hashtagScore = Math.min(hashtagAnalysis.averagePerPost * 2, 4);
-  const frequencyScore = Math.min(postsPerWeek, 3);
-  const consistencyScore = totalPosts >= 3 ? 3 : totalPosts;
-
-  const contentScore = hashtagScore + frequencyScore + consistencyScore;
-
-  const result = {
+  return {
     score: Math.round(contentScore * 10) / 10,
     metrics: {
       totalPosts,

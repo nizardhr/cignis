@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { AlertCircle, Zap, RefreshCw } from "lucide-react";
+import { AlertCircle, Zap, RefreshCw, Database } from "lucide-react";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { LoadingSpinner } from "../ui/LoadingSpinner";
@@ -16,6 +16,16 @@ export const Dashboard = () => {
   const { setCurrentModule } = useAppStore();
   const { data: dashboardData, isLoading, error, refetch } = useDashboardData();
   const [debugMode, setDebugMode] = useState(false);
+  const [isRefetching, setIsRefetching] = useState(false);
+
+  const handleRefetch = async () => {
+    setIsRefetching(true);
+    try {
+      await refetch();
+    } finally {
+      setIsRefetching(false);
+    }
+  };
 
   if (!dmaToken) {
     return (
@@ -61,9 +71,9 @@ export const Dashboard = () => {
           {error.message || "Failed to load dashboard data"}
         </p>
         <div className="space-y-3">
-          <Button variant="primary" onClick={() => refetch()}>
+          <Button variant="primary" onClick={handleRefetch} disabled={isRefetching}>
             <RefreshCw size={16} className="mr-2" />
-            Try Again
+            {isRefetching ? "Refreshing..." : "Try Again"}
           </Button>
           <Button
             variant="outline"
@@ -93,9 +103,12 @@ export const Dashboard = () => {
     >
       {/* Debug Panel */}
       {debugMode && dashboardData && (
-        <Card variant="glass" className="p-4 bg-yellow-50">
+        <Card variant="glass" className="p-4 bg-blue-50 border-blue-200">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-semibold">Debug Information</h3>
+            <h3 className="font-semibold flex items-center">
+              <Database size={16} className="mr-2" />
+              Debug Information
+            </h3>
             <Button
               variant="ghost"
               size="sm"
@@ -106,10 +119,25 @@ export const Dashboard = () => {
           </div>
           <div className="text-sm space-y-2">
             <div>Last Updated: {dashboardData.lastUpdated}</div>
-            <div>Overall Score: {dashboardData.profileEvaluation.overallScore}/10</div>
-            <div>Total Connections: {dashboardData.summaryKPIs.totalConnections}</div>
-            <div>Posts (30d): {dashboardData.summaryKPIs.postsLast30Days}</div>
-            <div>Engagement Rate: {dashboardData.summaryKPIs.engagementRate}</div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <strong>Profile Evaluation:</strong>
+                <div>Overall Score: {dashboardData.profileEvaluation.overallScore}/10</div>
+                <div>Scores: {Object.values(dashboardData.profileEvaluation.scores).join(', ')}</div>
+              </div>
+              <div>
+                <strong>Summary KPIs:</strong>
+                <div>Total Connections: {dashboardData.summaryKPIs.totalConnections}</div>
+                <div>Posts (30d): {dashboardData.summaryKPIs.postsLast30Days}</div>
+                <div>Engagement Rate: {dashboardData.summaryKPIs.engagementRate}</div>
+                <div>New Connections: {dashboardData.summaryKPIs.connectionsLast30Days}</div>
+              </div>
+            </div>
+            <div>
+              <strong>Mini Trends:</strong>
+              <div>Posts: {dashboardData.miniTrends.posts.map(p => p.value).join(', ')}</div>
+              <div>Engagements: {dashboardData.miniTrends.engagements.map(e => e.value).join(', ')}</div>
+            </div>
           </div>
         </Card>
       )}
@@ -137,8 +165,18 @@ export const Dashboard = () => {
           <Button
             variant="ghost"
             size="sm"
+            onClick={handleRefetch}
+            disabled={isRefetching}
+          >
+            <RefreshCw size={14} className={`mr-1 ${isRefetching ? 'animate-spin' : ''}`} />
+            {isRefetching ? "Refreshing..." : "Refresh Data"}
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={() => setDebugMode(!debugMode)}
           >
+            <Database size={14} className="mr-1" />
             {debugMode ? "Hide" : "Show"} Debug
           </Button>
         </div>
