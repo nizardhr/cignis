@@ -15,6 +15,7 @@ import {
   ChevronDown,
   Database,
   AlertCircle,
+  Image as ImageIcon,
 } from "lucide-react";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
@@ -25,6 +26,7 @@ import { usePostPulseData } from "../../hooks/usePostPulseData";
 import { useAppStore } from "../../stores/appStore";
 import { PostPulseCache } from "../../services/postpulse-cache";
 import { ProcessedPost } from "../../services/postpulse-cache";
+import { useAuthStore } from "../../stores/authStore";
 
 export const PostPulse = () => {
   const [searchTerm, setSearchTerm] = useState("");
@@ -32,7 +34,9 @@ export const PostPulse = () => {
   const [timeFilter, setTimeFilter] = useState<"7d" | "30d" | "90d">("7d");
   const [debugMode, setDebugMode] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [imageLoadErrors, setImageLoadErrors] = useState<Set<string>>(new Set());
   const { setCurrentModule } = useAppStore();
+  const { dmaToken } = useAuthStore();
 
   // Use the enhanced data hook
   const {
@@ -51,6 +55,23 @@ export const PostPulse = () => {
     pageSize: 12,
   });
 
+  const handleImageError = (postId: string) => {
+    setImageLoadErrors(prev => new Set([...prev, postId]));
+  };
+
+  const getThumbnailUrl = (post: ProcessedPost): string | null => {
+    if (imageLoadErrors.has(post.id)) {
+      return null;
+    }
+    
+    if (post.mediaAssetId && dmaToken) {
+      // Use our media download function for LinkedIn assets
+      return `/.netlify/functions/linkedin-media-download?assetId=${post.mediaAssetId}`;
+    }
+    
+    // Fallback to direct URL if available
+    return post.thumbnail || null;
+  };
   const handleRefresh = () => {
     PostPulseCache.clearCache();
     window.location.reload();
@@ -352,45 +373,33 @@ export const PostPulse = () => {
                     </div>
 
                     {/* Thumbnail if available */}
-                    {post.thumbnail && (
+                    {getThumbnailUrl(post) && (
                       <div className="w-full h-32 bg-gradient-to-br from-blue-100 to-purple-100 rounded-lg mb-3 flex items-center justify-center overflow-hidden">
                         <img
-                          src={post.thumbnail}
+                          src={getThumbnailUrl(post)!}
                           alt="Post thumbnail"
                           className="w-full h-full object-cover"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            // Hide the image and show a placeholder instead
-                            target.style.display = "none";
-                            const parent = target.parentElement;
-                            if (parent && !parent.querySelector('.thumbnail-placeholder')) {
-                              const placeholder = document.createElement('div');
-                              placeholder.className = 'thumbnail-placeholder text-center';
-                              placeholder.innerHTML = `
-                                <div class="text-gray-600 mb-2">
-                                  <svg class="w-8 h-8 mx-auto" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd" />
-                                  </svg>
-                                </div>
-                                <span class="text-sm text-gray-600">${post.mediaType} Content</span>
-                              `;
-                              parent.appendChild(placeholder);
-                            }
-                          }}
+                          onError={() => handleImageError(post.id)}
+                          loading="lazy"
                         />
                       </div>
                     )}
 
                     {/* Media Type Indicator */}
-                    {post.mediaType !== "TEXT" && !post.thumbnail && (
+                    {post.mediaType !== "TEXT" && !getThumbnailUrl(post) && (
                       <div className="w-full h-32 bg-gradient-to-br from-blue-100 to-purple-100 rounded-lg mb-3 flex items-center justify-center">
                         <div className="text-center">
-                          <Eye
+                          <ImageIcon
                             size={24}
                             className="mx-auto text-gray-600 mb-2"
                           />
                           <span className="text-sm text-gray-600">
                             {post.mediaType} Content
+                            {post.mediaAssetId && (
+                              <div className="text-xs text-gray-500 mt-1">
+                                Asset: {post.mediaAssetId.substring(0, 8)}...
+                              </div>
+                            )}
                           </span>
                         </div>
                       </div>

@@ -69,29 +69,19 @@ export class PostPulseProcessor {
               }
             }
 
-            // Extract media information
+            // Extract media information - Historical posts don't have asset URNs
+            // We'll rely on MediaUrl if available, but won't have downloadable assets
             let media = undefined;
             let thumbnail = null;
+            let mediaAssetId = null;
             
             if (share.MediaUrl) {
               media = { url: share.MediaUrl };
               thumbnail = share.MediaUrl;
             } else if (share.MediaType && share.MediaType !== "TEXT") {
-              // If there's a media type but no URL, try to extract from other fields
-              const mediaFields = [
-                share["Media URL"],
-                share.mediaUrl,
-                share["Image URL"],
-                share.imageUrl
-              ];
-              
-              for (const field of mediaFields) {
-                if (field && typeof field === 'string' && field.startsWith('http')) {
-                  media = { url: field };
-                  thumbnail = field;
-                  break;
-                }
-              }
+              // Historical posts may not have direct media URLs
+              // We'll show a media type indicator instead
+              media = { type: share.MediaType };
             }
 
             posts.push({
@@ -112,6 +102,7 @@ export class PostPulseProcessor {
                   : "blue",
               media: media,
               thumbnail: thumbnail,
+              mediaAssetId: mediaAssetId,
               canRepost: daysSincePosted >= 30,
               daysSincePosted: daysSincePosted,
               visibility: share.Visibility || "PUBLIC",
@@ -214,25 +205,49 @@ export class PostPulseProcessor {
           shares: 0,
         };
 
-        // Extract media information from the post
+        // Extract media information from the post using LinkedIn's media structure
         let media = null;
         let thumbnail = null;
         let mediaType = "TEXT";
+        let mediaAssetId = null;
         
         const mediaArray = processedContent?.media || activityContent?.media;
         if (mediaArray && mediaArray.length > 0) {
           const firstMedia = mediaArray[0];
+          console.log("Processing media for post:", postId, firstMedia);
           
-          // Try to extract media URL from various possible fields
-          const mediaUrl = firstMedia?.media?.downloadUrl ||
-                           firstMedia?.media?.url ||
-                           firstMedia?.downloadUrl ||
-                           firstMedia?.url;
+          // Extract the digital media asset URN
+          const mediaUrn = firstMedia?.media;
+          if (mediaUrn && typeof mediaUrn === 'string') {
+            // Extract asset ID from URN like "urn:li:digitalmediaAsset:C5606AQF245TuEXNVXA"
+            const assetMatch = mediaUrn.match(/urn:li:digitalmediaAsset:(.+)/);
+            if (assetMatch) {
+              mediaAssetId = assetMatch[1];
+              console.log("Extracted media asset ID:", mediaAssetId);
+              
+              // We'll generate the thumbnail URL using our media download function
+              thumbnail = `/.netlify/functions/linkedin-media-download?assetId=${mediaAssetId}`;
+              media = { 
+                urn: mediaUrn, 
+                assetId: mediaAssetId,
+                status: firstMedia?.status || "READY"
+              };
+              mediaType = firstMedia?.mediaType || "IMAGE";
+            }
+          }
           
-          if (mediaUrl) {
-            media = { url: mediaUrl };
-            thumbnail = mediaUrl;
-            mediaType = firstMedia?.mediaType || "IMAGE";
+          // Fallback: try to extract direct URLs if available
+          if (!mediaAssetId) {
+            const mediaUrl = firstMedia?.media?.downloadUrl ||
+                             firstMedia?.media?.url ||
+                             firstMedia?.downloadUrl ||
+                             firstMedia?.url;
+            
+            if (mediaUrl) {
+              media = { url: mediaUrl };
+              thumbnail = mediaUrl;
+              mediaType = firstMedia?.mediaType || "IMAGE";
+            }
           }
         }
 
@@ -250,6 +265,7 @@ export class PostPulseProcessor {
               : "blue",
           media: media,
           thumbnail: thumbnail,
+          mediaAssetId: mediaAssetId,
           canRepost: daysSincePosted >= 30,
           daysSincePosted: daysSincePosted,
           visibility: "PUBLIC",
