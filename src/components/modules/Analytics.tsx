@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Calendar, TrendingUp, Users, MessageCircle, Eye, BarChart3, Search, Heart, Hash, FileText, Video, Image as ImageIcon, ExternalLink } from 'lucide-react';
+import { Calendar, TrendingUp, Users, MessageCircle, Eye, BarChart3, Heart, FileText } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { LoadingSpinner } from '../ui/LoadingSpinner';
@@ -23,7 +23,7 @@ import {
   AreaChart
 } from 'recharts';
 
-type TimeRange = '7d' | '30d' | '90d' | '365d' | 'custom';
+type TimeRange = '7d' | '30d' | '90d' | 'custom';
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82ca9d', '#ffc658', '#ff7300'];
 
@@ -49,17 +49,8 @@ interface AnalyticsData {
     hashtag: string;
     count: number;
   }>;
-  topPosts: Array<{
-    id: string;
-    content: string;
-    engagement: number;
-    likes: number;
-    comments: number;
-    shares: number;
+  dailyMessages: Array<{
     date: string;
-  }>;
-  weeklyMessages: Array<{
-    week: string;
     sent: number;
     received: number;
   }>;
@@ -102,11 +93,14 @@ export const Analytics = () => {
 
     // Filter for user's own activities
     const currentUserId = elements.find(e => e.owner)?.owner;
+    
+    // Filter for user's personal posts only (not company posts) and exclude deleted posts
     const userPosts = elements.filter(e => 
       e.resourceName === 'ugcPosts' && 
       e.method === 'CREATE' &&
       e.owner === e.actor &&
-      e.activity?.author?.startsWith?.('urn:li:person:') // Only personal posts, not company posts
+      e.activity?.author?.startsWith?.('urn:li:person:') && // Only personal posts, not company posts
+      e.activity?.lifecycleState !== 'DELETED' // Exclude deleted posts
     );
 
     const userLikes = elements.filter(e => 
@@ -142,11 +136,8 @@ export const Analytics = () => {
     // Process hashtags
     const topHashtags = processHashtags(userPosts);
     
-    // Process top posts
-    const topPosts = processTopPosts(userPosts, elements);
-    
-    // Process weekly messages
-    const weeklyMessages = processWeeklyMessages(messages, currentUserId);
+    // Process daily messages for past 30 days
+    const dailyMessages = processDailyMessages(messages, currentUserId);
 
     // Calculate KPIs
     const totalEngagements = userLikes.length + userComments.length;
@@ -162,9 +153,8 @@ export const Analytics = () => {
       dailyActivity,
       connectionsGrowth,
       postTypes,
-      topHashtags,
-      topPosts,
-      weeklyMessages,
+      topHashtags: [], // Removed hashtags
+      dailyMessages,
       kpis
     };
   }, [changelogData, connectionsData, postsData]);
@@ -275,14 +265,17 @@ export const Analytics = () => {
 
   function processPostTypes(posts: any[]) {
     const typeCounts: Record<string, number> = {
-      IMAGE: 0,
-      VIDEO: 0,
-      ARTICLE: 0,
-      EXTERNAL: 0,
-      TEXT: 0
+      'Text Only': 0,
+      'Image': 0,
+      'Video': 0,
+      'Article': 0,
+      'External Link': 0
     };
 
     posts.forEach(post => {
+      // Skip deleted posts
+      if (post.activity?.lifecycleState === 'DELETED') return;
+      
       const content = post.activity?.specificContent?.['com.linkedin.ugc.ShareContent'];
       const media = content?.media;
       
@@ -290,16 +283,16 @@ export const Analytics = () => {
         // Check media type
         const mediaType = media[0].mediaType || 'IMAGE';
         if (mediaType.includes('VIDEO')) {
-          typeCounts.VIDEO++;
+          typeCounts['Video']++;
         } else if (mediaType.includes('IMAGE')) {
-          typeCounts.IMAGE++;
+          typeCounts['Image']++;
         } else {
-          typeCounts.EXTERNAL++;
+          typeCounts['External Link']++;
         }
       } else if (content?.shareCommentary?.text?.includes('http')) {
-        typeCounts.EXTERNAL++;
+        typeCounts['External Link']++;
       } else {
-        typeCounts.TEXT++;
+        typeCounts['Text Only']++;
       }
     });
 
@@ -312,105 +305,55 @@ export const Analytics = () => {
       }));
   }
 
-  function processHashtags(posts: any[]) {
-    const hashtagCounts: Record<string, number> = {};
-
-    posts.forEach(post => {
-      const content = post.activity?.specificContent?.['com.linkedin.ugc.ShareContent'];
-      const hashtags = content?.shareFeatures?.hashtags || [];
-      
-      hashtags.forEach((hashtagUrn: string) => {
-        const hashtag = hashtagUrn.replace('urn:li:hashtag:', '#');
-        hashtagCounts[hashtag] = (hashtagCounts[hashtag] || 0) + 1;
-      });
-
-      // Also extract hashtags from text
-      const text = content?.shareCommentary?.text || '';
-      const textHashtags = text.match(/#[\w]+/g) || [];
-      textHashtags.forEach(hashtag => {
-        hashtagCounts[hashtag] = (hashtagCounts[hashtag] || 0) + 1;
-      });
-    });
-
-    return Object.entries(hashtagCounts)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 10)
-      .map(([hashtag, count]) => ({ hashtag, count }));
-  }
-
-  function processTopPosts(posts: any[], allElements: any[]) {
-    const postEngagement: Record<string, { likes: number; comments: number; shares: number }> = {};
-
-    // Calculate engagement for each post
-    allElements.forEach(element => {
-      if (element.resourceName?.includes('socialActions')) {
-        const postId = element.activity?.object;
-        if (postId && !postEngagement[postId]) {
-          postEngagement[postId] = { likes: 0, comments: 0, shares: 0 };
-        }
-        
-        if (postId) {
-          if (element.resourceName === 'socialActions/likes' && element.method === 'CREATE') {
-            postEngagement[postId].likes++;
-          } else if (element.resourceName === 'socialActions/comments' && element.method === 'CREATE') {
-            postEngagement[postId].comments++;
-          } else if (element.resourceName === 'socialActions/shares' && element.method === 'CREATE') {
-            postEngagement[postId].shares++;
-          }
-        }
-      }
-    });
-
-    return posts
-      .map(post => {
-        const postId = post.resourceId;
-        const engagement = postEngagement[postId] || { likes: 0, comments: 0, shares: 0 };
-        const totalEngagement = engagement.likes + engagement.comments + engagement.shares;
-        
-        return {
-          id: postId,
-          content: post.activity?.specificContent?.['com.linkedin.ugc.ShareContent']?.shareCommentary?.text?.substring(0, 100) + '...' || 'Post content',
-          engagement: totalEngagement,
-          likes: engagement.likes,
-          comments: engagement.comments,
-          shares: engagement.shares,
-          date: new Date(post.capturedAt).toLocaleDateString()
-        };
-      })
-      .sort((a, b) => b.engagement - a.engagement)
-      .slice(0, 10);
-  }
-
-  function processWeeklyMessages(messages: any[], currentUserId: string) {
-    const weeklyData: Record<string, { sent: number; received: number }> = {};
+  function processDailyMessages(messages: any[], currentUserId: string) {
+    const dailyData: Record<string, { sent: number; received: number }> = {};
     
-    // Get last 8 weeks
+    // Get last 30 days
     const endDate = new Date();
     const startDate = new Date();
-    startDate.setDate(endDate.getDate() - 56); // 8 weeks
+    startDate.setDate(endDate.getDate() - 30); // 30 days
 
-    for (let i = 0; i < 8; i++) {
-      const weekStart = new Date(startDate);
-      weekStart.setDate(startDate.getDate() + (i * 7));
-      const weekKey = `Week ${i + 1}`;
-      weeklyData[weekKey] = { sent: 0, received: 0 };
+    // Initialize all dates with zero values
+    for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      const dateStr = d.toISOString().split('T')[0];
+      dailyData[dateStr] = { sent: 0, received: 0 };
     }
 
     messages.forEach(message => {
       const messageDate = new Date(message.capturedAt);
-      const weeksDiff = Math.floor((messageDate.getTime() - startDate.getTime()) / (7 * 24 * 60 * 60 * 1000));
+      const dateStr = messageDate.toISOString().split('T')[0];
       
-      if (weeksDiff >= 0 && weeksDiff < 8) {
-        const weekKey = `Week ${weeksDiff + 1}`;
+      if (dailyData[dateStr]) {
         if (message.actor === currentUserId) {
-          weeklyData[weekKey].sent++;
+          dailyData[dateStr].sent++;
         } else {
-          weeklyData[weekKey].received++;
+          dailyData[dateStr].received++;
         }
       }
     });
 
-    return Object.entries(weeklyData).map(([week, data]) => ({
+    return Object.entries(dailyData)
+      .map(([date, data]) => ({
+        date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+        sent: data.sent,
+        received: data.received
+      }))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+  }
+
+  function processHashtags(posts: any[]) {
+    // Return empty array since hashtags are removed
+    return [];
+  }
+
+  function processTopPosts(posts: any[], allElements: any[]) {
+    // Return empty array since top posts are removed
+    return [];
+  }
+
+  function processWeeklyMessages(messages: any[], currentUserId: string) {
+    // Return empty array since this is replaced with daily messages
+    return Object.entries({}).map(([week, data]) => ({
       week,
       sent: data.sent,
       received: data.received
@@ -486,7 +429,7 @@ export const Analytics = () => {
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Analytics Dashboard</h2>
         <div className="flex space-x-2">
-          {(['7d', '30d', '90d', '365d'] as TimeRange[]).map((range) => (
+          {(['7d', '30d', '90d'] as TimeRange[]).map((range) => (
             <Button
               key={range}
               variant={timeRange === range ? 'primary' : 'outline'}
@@ -630,15 +573,17 @@ export const Analytics = () => {
         {/* Post Types Chart */}
         <Card variant="glass" className="p-6">
           <h3 className="text-lg font-semibold mb-4">Post Types Distribution</h3>
-          <ResponsiveContainer width="100%" height={300}>
+          <ResponsiveContainer width="100%" height={350}>
             <PieChart>
               <Pie
                 data={analyticsData.postTypes}
                 cx="50%"
                 cy="50%"
-                outerRadius={80}
+                outerRadius={100}
+                innerRadius={40}
                 dataKey="value"
-                label={({ name, value }) => `${name}: ${value}`}
+                label={({ name, value, percent }) => `${name}: ${value} (${(percent * 100).toFixed(0)}%)`}
+                labelLine={false}
               >
                 {analyticsData.postTypes.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
@@ -649,118 +594,25 @@ export const Analytics = () => {
           </ResponsiveContainer>
         </Card>
 
-        {/* Top Hashtags Chart */}
+        {/* Daily Messages Chart */}
         <Card variant="glass" className="p-6">
-          <h3 className="text-lg font-semibold mb-4">Top 10 Hashtags</h3>
+          <h3 className="text-lg font-semibold mb-4">Daily Messages (Past 30 Days)</h3>
           <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={analyticsData.topHashtags} layout="horizontal">
+            <LineChart data={analyticsData.dailyMessages}>
               <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" />
-              <YAxis dataKey="hashtag" type="category" width={80} />
-              <Tooltip />
-              <Bar dataKey="count" fill="#8884d8" />
-            </BarChart>
-          </ResponsiveContainer>
-        </Card>
-
-        {/* Weekly Messages Chart */}
-        <Card variant="glass" className="p-6">
-          <h3 className="text-lg font-semibold mb-4">Weekly Messages</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={analyticsData.weeklyMessages}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="week" />
+              <XAxis 
+                dataKey="date" 
+                tick={{ fontSize: 12 }}
+                interval="preserveStartEnd"
+              />
               <YAxis />
               <Tooltip />
-              <Bar dataKey="sent" stackId="a" fill="#3B82F6" name="Sent" />
-              <Bar dataKey="received" stackId="a" fill="#10B981" name="Received" />
-            </BarChart>
-          </ResponsiveContainer>
-        </Card>
-
-        {/* Top Posts Chart */}
-        <Card variant="glass" className="p-6">
-          <h3 className="text-lg font-semibold mb-4">Top 10 Posts by Engagement</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={analyticsData.topPosts} layout="horizontal">
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis type="number" />
-              <YAxis dataKey="content" type="category" width={100} />
-              <Tooltip 
-                formatter={(value, name) => [value, name]}
-                labelFormatter={(label) => `Post: ${label}`}
-              />
-              <Bar dataKey="engagement" fill="#EF4444" />
-            </BarChart>
+              <Line type="monotone" dataKey="sent" stroke="#3B82F6" strokeWidth={2} name="Messages Sent" />
+              <Line type="monotone" dataKey="received" stroke="#10B981" strokeWidth={2} name="Messages Received" />
+            </LineChart>
           </ResponsiveContainer>
         </Card>
       </div>
-
-      {/* Detailed Top Posts Table */}
-      {analyticsData.topPosts.length > 0 && (
-        <Card variant="glass" className="p-6">
-          <h3 className="text-lg font-semibold mb-4">Top Performing Posts Details</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left p-2">Rank</th>
-                  <th className="text-left p-2">Content</th>
-                  <th className="text-left p-2">Date</th>
-                  <th className="text-left p-2">Likes</th>
-                  <th className="text-left p-2">Comments</th>
-                  <th className="text-left p-2">Shares</th>
-                  <th className="text-left p-2">Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                {analyticsData.topPosts.map((post, index) => (
-                  <tr key={post.id} className="border-b hover:bg-gray-50">
-                    <td className="p-2">
-                      <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-bold ${
-                        index === 0 ? 'bg-yellow-500' : index === 1 ? 'bg-gray-400' : 'bg-orange-500'
-                      }`}>
-                        {index + 1}
-                      </div>
-                    </td>
-                    <td className="p-2 max-w-xs">
-                      <div className="truncate" title={post.content}>
-                        {post.content}
-                      </div>
-                    </td>
-                    <td className="p-2">{post.date}</td>
-                    <td className="p-2 text-red-600 font-semibold">{post.likes}</td>
-                    <td className="p-2 text-blue-600 font-semibold">{post.comments}</td>
-                    <td className="p-2 text-green-600 font-semibold">{post.shares}</td>
-                    <td className="p-2 font-bold">{post.engagement}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
-
-      {/* Hashtags Cloud */}
-      {analyticsData.topHashtags.length > 0 && (
-        <Card variant="glass" className="p-6">
-          <h3 className="text-lg font-semibold mb-4">Hashtag Usage</h3>
-          <div className="flex flex-wrap gap-2">
-            {analyticsData.topHashtags.map((hashtag, index) => (
-              <span
-                key={hashtag.hashtag}
-                className={`px-3 py-1 rounded-full text-sm font-medium ${
-                  index < 3 ? 'bg-blue-100 text-blue-800' : 
-                  index < 6 ? 'bg-green-100 text-green-800' : 
-                  'bg-gray-100 text-gray-800'
-                }`}
-              >
-                {hashtag.hashtag} ({hashtag.count})
-              </span>
-            ))}
-          </div>
-        </Card>
-      )}
     </motion.div>
   );
 };
