@@ -21,7 +21,7 @@ const queryClient = new QueryClient({
 });
 
 function App() {
-  const { isBasicAuthenticated, isFullyAuthenticated } = useAuthStore();
+  const { isBasicAuthenticated, isFullyAuthenticated, accessToken, dmaToken } = useAuthStore();
   const { sidebarCollapsed } = useAppStore();
   const darkMode = false; // Force bright mode always
   const [authCheckComplete, setAuthCheckComplete] = useState(false);
