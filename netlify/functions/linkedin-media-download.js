@@ -1,3 +1,5 @@
+// netlify/functions/linkedin-media-download.js
+
 export async function handler(event, context) {
   if (event.httpMethod === "OPTIONS") {
     return {
@@ -10,55 +12,80 @@ export async function handler(event, context) {
     };
   }
 
-  const { authorization } = event.headers;
-  const { assetId, token } = event.queryStringParameters || {};
-
-  console.log("LinkedIn Media Download Function - Asset ID:", assetId);
-  console.log("LinkedIn Media Download Function - Token from query:", token ? "present" : "missing");
-  console.log("LinkedIn Media Download Function - Authorization header present:", !!authorization);
-
-  // Use token from query params if authorization header is not present
-  const authToken = authorization || (token ? `Bearer ${token}` : null);
-  
-  if (!authToken) {
-    return {
-      statusCode: 401,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
-      body: JSON.stringify({ error: "No authorization token provided" }),
-    };
-  }
-
-  if (!assetId) {
-    return {
-      statusCode: 400,
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
-      body: JSON.stringify({ error: "Asset ID is required" }),
-    };
-  }
+  console.log("LinkedIn Media Download Function - Starting");
+  console.log("Query parameters:", event.queryStringParameters);
 
   try {
-    // Try the most common LinkedIn media download endpoint
-    const url = `https://api.linkedin.com/mediaDownload/${assetId}`;
+    const { assetId, token } = event.queryStringParameters || {};
+    const authHeader = event.headers.authorization;
+
+    console.log("LinkedIn Media Download Function - Asset ID:", assetId);
+    console.log("LinkedIn Media Download Function - Token from query:", token ? "present" : "missing");
+    console.log("LinkedIn Media Download Function - Auth header:", authHeader ? "present" : "missing");
+
+    // Use token from query params or authorization header
+    const accessToken = token || (authHeader ? authHeader.replace('Bearer ', '') : null);
+
+    if (!assetId) {
+      console.log("LinkedIn Media Download Function - Missing assetId");
+      return {
+        statusCode: 400,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+        body: JSON.stringify({ error: "Missing assetId parameter" }),
+      };
+    }
+
+    if (!accessToken) {
+      console.log("LinkedIn Media Download Function - Missing access token");
+      return {
+        statusCode: 400,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+        body: JSON.stringify({ error: "Missing access token" }),
+      };
+    }
+
+    // Validate asset ID format - should not include URN prefix
+    if (assetId.startsWith("urn:li:digitalmediaAsset:")) {
+      console.log("LinkedIn Media Download Function - Invalid assetId format (includes URN prefix)");
+      return {
+        statusCode: 400,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+        body: JSON.stringify({ 
+          error: "Invalid assetId format", 
+          details: "Pass only the asset ID, not the full URN. Remove 'urn:li:digitalmediaAsset:' prefix." 
+        }),
+      };
+    }
+
+    // Construct the LinkedIn mediaDownload URL
+    const url = `https://api.linkedin.com/mediaDownload/${encodeURIComponent(assetId)}`;
     console.log("LinkedIn Media Download Function - Calling URL:", url);
 
     const response = await fetch(url, {
+      method: "GET",
       headers: {
-        Authorization: authToken,
-        "LinkedIn-Version": "202312",
+        Authorization: `Bearer ${accessToken}`,
+        // Note: No LinkedIn-Version header for mediaDownload endpoint
       },
+      redirect: "follow", // Follow 302 redirects to CDN
     });
 
     console.log("LinkedIn Media Download Function - Response status:", response.status);
+    console.log("LinkedIn Media Download Function - Response headers:", Object.fromEntries(response.headers.entries()));
 
+    // If LinkedIn returns an error, relay it with the actual error body
     if (!response.ok) {
-      const errorText = await response.text();
-      console.log("LinkedIn Media Download Function - Error response:", errorText);
+      const errorText = await response.text().catch(() => "No error body");
+      console.log("LinkedIn Media Download Function - LinkedIn error:", errorText);
       
       return {
         statusCode: response.status,
@@ -67,8 +94,9 @@ export async function handler(event, context) {
           "Access-Control-Allow-Origin": "*",
         },
         body: JSON.stringify({
-          error: "Failed to download LinkedIn media",
-          details: `LinkedIn API returned ${response.status}: ${response.statusText}`,
+          error: "LinkedIn API error",
+          status: response.status,
+          details: `LinkedIn response ${response.status}: ${errorText}`,
           assetId: assetId,
           endpoint: url
         }),
@@ -76,33 +104,27 @@ export async function handler(event, context) {
     }
 
     // Get the binary data
-    const imageBuffer = await response.arrayBuffer();
-    const contentType = response.headers.get('content-type') || 'image/jpeg';
+    const arrayBuffer = await response.arrayBuffer();
+    const contentType = response.headers.get('content-type') || 'application/octet-stream';
 
-    console.log("LinkedIn Media Download Function - Image size:", imageBuffer.byteLength, "bytes");
+    console.log("LinkedIn Media Download Function - Success! Image size:", arrayBuffer.byteLength, "bytes");
+    console.log("LinkedIn Media Download Function - Content type:", contentType);
 
-    // Convert to base64 for frontend display
-    const base64Image = Buffer.from(imageBuffer).toString('base64');
-    const dataUrl = `data:${contentType};base64,${base64Image}`;
-
+    // Return the binary data as base64 encoded
     return {
       statusCode: 200,
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": contentType,
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Headers": "Content-Type, Authorization",
         "Cache-Control": "public, max-age=3600", // Cache for 1 hour
       },
-      body: JSON.stringify({
-        success: true,
-        dataUrl: dataUrl,
-        contentType: contentType,
-        size: imageBuffer.byteLength,
-        assetId: assetId
-      }),
+      body: Buffer.from(arrayBuffer).toString('base64'),
+      isBase64Encoded: true,
     };
+
   } catch (error) {
-    console.error("LinkedIn Media Download Function - Error:", error);
+    console.error("LinkedIn Media Download Function - Unexpected error:", error);
     return {
       statusCode: 500,
       headers: {
@@ -110,9 +132,9 @@ export async function handler(event, context) {
         "Access-Control-Allow-Origin": "*",
       },
       body: JSON.stringify({
-        error: "Failed to download LinkedIn media",
+        error: "Server error",
         details: error.message,
-        assetId: assetId
+        stack: error.stack
       }),
     };
   }
