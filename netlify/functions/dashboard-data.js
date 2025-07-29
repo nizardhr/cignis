@@ -22,7 +22,6 @@ export async function handler(event, context) {
 
   // Extract token from Bearer header
   const token = authorization.replace('Bearer ', '');
-  console.log("Dashboard Data: Token present:", !!token, "Length:", token.length);
 
   try {
     console.log("Dashboard Data: Starting analysis");
@@ -46,15 +45,16 @@ export async function handler(event, context) {
       fetchLinkedInData(authorization, "linkedin-snapshot", "EDUCATION")
     ]);
 
-    // Enhanced logging to see actual data structure
-    console.log("Dashboard Data: Raw API responses:");
-    console.log("Profile Data:", JSON.stringify(profileData, null, 2));
-    console.log("Connections Data:", JSON.stringify(connectionsData, null, 2));
-    console.log("Posts Data:", JSON.stringify(postsData, null, 2));
-    console.log("Changelog Data:", JSON.stringify(changelogData, null, 2));
-    console.log("Skills Data:", JSON.stringify(skillsData, null, 2));
-    console.log("Positions Data:", JSON.stringify(positionsData, null, 2));
-    console.log("Education Data:", JSON.stringify(educationData, null, 2));
+    // Log data availability for debugging
+    console.log("Dashboard Data: API data summary:", {
+      profile: profileData?.elements?.length || 0,
+      connections: connectionsData?.elements?.[0]?.snapshotData?.length || 0,
+      posts: postsData?.elements?.[0]?.snapshotData?.length || 0,
+      changelog: changelogData?.elements?.length || 0,
+      skills: skillsData?.elements?.[0]?.snapshotData?.length || 0,
+      positions: positionsData?.elements?.[0]?.snapshotData?.length || 0,
+      education: educationData?.elements?.[0]?.snapshotData?.length || 0
+    });
 
     // Calculate profile evaluation scores
     const profileEvaluation = calculateProfileEvaluation({
@@ -84,7 +84,7 @@ export async function handler(event, context) {
       lastUpdated: new Date().toISOString()
     };
 
-    console.log("Dashboard Data: Final result:", JSON.stringify(result, null, 2));
+    console.log("Dashboard Data: Analysis complete");
 
     return {
       statusCode: 200,
@@ -132,16 +132,12 @@ async function fetchLinkedInData(authorization, endpoint, domain = null, extraPa
       url += `?${params.toString()}`;
     }
 
-    console.log(`Fetching LinkedIn data: ${url}`);
-
     const response = await fetch(url, {
       headers: {
         Authorization: authorization,
         "LinkedIn-Version": "202312",
       },
     });
-
-    console.log(`${endpoint} ${domain} response status:`, response.status);
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -150,12 +146,10 @@ async function fetchLinkedInData(authorization, endpoint, domain = null, extraPa
     }
 
     const data = await response.json();
-    console.log(`${endpoint} ${domain} full response:`, JSON.stringify(data, null, 2));
     
     return data;
   } catch (error) {
     console.error(`Error fetching ${endpoint} ${domain}:`, error);
-    console.error(`Error stack for ${endpoint} ${domain}:`, error.stack);
     return null;
   }
 }
@@ -170,16 +164,6 @@ function calculateProfileEvaluation(data) {
     positionsData,
     educationData
   } = data;
-
-  console.log("=== PROFILE EVALUATION CALCULATION ===");
-  console.log("Input data structures:");
-  console.log("Profile Data:", profileData);
-  console.log("Connections Data:", connectionsData);
-  console.log("Posts Data:", postsData);
-  console.log("Changelog Data:", changelogData);
-  console.log("Skills Data:", skillsData);
-  console.log("Positions Data:", positionsData);
-  console.log("Education Data:", educationData);
 
   const scores = {};
 
@@ -222,16 +206,8 @@ function calculateProfileEvaluation(data) {
     positionsData
   });
 
-  console.log("Calculated scores:", scores);
-
   // Calculate overall score
   const overallScore = Object.values(scores).reduce((sum, score) => sum + score, 0) / 10;
-
-  console.log("Overall score calculation:", {
-    scoresArray: Object.values(scores),
-    sum: Object.values(scores).reduce((sum, score) => sum + score, 0),
-    overallScore: Math.round(overallScore * 10) / 10
-  });
 
   return {
     scores,
@@ -241,7 +217,6 @@ function calculateProfileEvaluation(data) {
 }
 
 function calculateProfileCompleteness({ profileData, skillsData, positionsData, educationData }) {
-  console.log("=== PROFILE COMPLETENESS CALCULATION ===");
   let score = 0;
   
   // Extract actual data arrays from LinkedIn API response
@@ -250,96 +225,60 @@ function calculateProfileCompleteness({ profileData, skillsData, positionsData, 
   const positionsSnapshot = positionsData?.elements?.[0]?.snapshotData || [];
   const educationSnapshot = educationData?.elements?.[0]?.snapshotData || [];
   
-  console.log("Extracted snapshots:", {
-    profileSnapshot: profileSnapshot.length,
-    skillsSnapshot: skillsSnapshot.length,
-    positionsSnapshot: positionsSnapshot.length,
-    educationSnapshot: educationSnapshot.length
-  });
-  
-  console.log("Profile snapshot sample:", profileSnapshot[0]);
-  console.log("Skills snapshot sample:", skillsSnapshot[0]);
-  console.log("Positions snapshot sample:", positionsSnapshot[0]);
-  console.log("Education snapshot sample:", educationSnapshot[0]);
-  
   // LinkedIn profile data might be an array, find the main profile entry
   const profile = profileSnapshot.find(p => 
     p["First Name"] || p["Last Name"] || p.firstName || p.lastName || 
     p.headline || p.Headline || p.industry || p.Industry
   ) || profileSnapshot[0] || {};
   
-  console.log("Profile data found:", profile);
-  console.log("Profile keys:", Object.keys(profile));
-  
   // Basic info (4 points)
   if (profile["First Name"] || profile.firstName) {
     score += 1;
-    console.log("Found first name, +1 point");
   }
   if (profile["Last Name"] || profile.lastName) {
     score += 1;
-    console.log("Found last name, +1 point");
   }
   if (profile["Headline"] || profile.headline) {
     score += 1;
-    console.log("Found headline, +1 point");
   }
   if (profile["Industry"] || profile.industry) {
     score += 1;
-    console.log("Found industry, +1 point");
   }
   
   // Skills (2 points)
   const skillsCount = skillsSnapshot.length;
   const skillsPoints = Math.min(skillsCount / 5, 2);
   score += skillsPoints;
-  console.log(`Found ${skillsCount} skills, +${skillsPoints} points`);
   
   // Experience (2 points)
   const positionsCount = positionsSnapshot.length;
   const positionsPoints = Math.min(positionsCount / 2, 2);
   score += positionsPoints;
-  console.log(`Found ${positionsCount} positions, +${positionsPoints} points`);
   
   // Education (2 points)
   const educationCount = educationSnapshot.length;
   const educationPoints = Math.min(educationCount, 2);
   score += educationPoints;
-  console.log(`Found ${educationCount} education entries, +${educationPoints} points`);
   
   const finalScore = Math.min(Math.round(score), 10);
-  console.log(`Profile completeness final score: ${finalScore}/10`);
   
   return finalScore;
 }
 
 function calculatePostingActivity(postsData, changelogData) {
-  console.log("=== POSTING ACTIVITY CALCULATION ===");
-  
   // Get posts from changelog (last 28 days)
   const posts = changelogData?.elements?.filter(e => 
     e.resourceName === "ugcPosts" && e.method === "CREATE"
   ) || [];
   
-  console.log("Changelog posts found:", posts.length);
-  console.log("Sample changelog post:", posts[0]);
-  
   // Also check snapshot data for historical posts
   const snapshotPosts = postsData?.elements?.[0]?.snapshotData || [];
-  console.log("Snapshot posts found:", snapshotPosts.length);
-  console.log("Sample snapshot post:", snapshotPosts[0]);
   
   const last30Days = Date.now() - (30 * 24 * 60 * 60 * 1000);
   const recentPosts = posts.filter(p => p.capturedAt >= last30Days);
   
   // If no recent posts in changelog, use snapshot data
   const totalRecentPosts = recentPosts.length > 0 ? recentPosts.length : Math.min(snapshotPosts.length, 10);
-  
-  console.log("Recent posts calculation:", {
-    changelogRecent: recentPosts.length,
-    snapshotTotal: snapshotPosts.length,
-    finalCount: totalRecentPosts
-  });
   
   // Score based on posting frequency (0-10)
   let score = 0;
@@ -349,8 +288,6 @@ function calculatePostingActivity(postsData, changelogData) {
   else if (totalRecentPosts >= 5) score = 4;
   else if (totalRecentPosts >= 1) score = 2;
   else score = 0;
-  
-  console.log(`Posting activity score: ${score}/10 (${totalRecentPosts} posts)`);
   return score;
 }
 
@@ -750,12 +687,9 @@ function calculateProfessionalBrand(data) {
 }
 
 function calculateSummaryKPIs(data) {
-  console.log("=== SUMMARY KPIS CALCULATION ===");
-  
   const { connectionsData, postsData, changelogData } = data;
   
   const totalConnections = connectionsData?.elements?.[0]?.snapshotData?.length || 0;
-  console.log("Total connections:", totalConnections);
   
   const last30Days = Date.now() - (30 * 24 * 60 * 60 * 1000);
   
@@ -769,12 +703,6 @@ function calculateSummaryKPIs(data) {
   // If no recent posts in changelog, estimate from snapshot
   const snapshotPosts = postsData?.elements?.[0]?.snapshotData || [];
   const postsLast30Days = recentPosts.length > 0 ? recentPosts.length : Math.min(snapshotPosts.length, 5);
-  
-  console.log("Posts calculation:", {
-    changelogRecent: recentPosts.length,
-    snapshotTotal: snapshotPosts.length,
-    finalCount: postsLast30Days
-  });
   
   // Connections added last 30 days
   const connections = connectionsData?.elements?.[0]?.snapshotData || [];
@@ -790,11 +718,6 @@ function calculateSummaryKPIs(data) {
     e.capturedAt >= last30Days
   ) || [];
   
-  console.log("Recent connections:", {
-    fromSnapshot: recentConnections.length,
-    fromInvitations: recentInvitations.length
-  });
-  
   // Engagement rate
   const likes = changelogData?.elements?.filter(e => 
     e.resourceName === "socialActions/likes" && e.method === "CREATE"
@@ -807,30 +730,17 @@ function calculateSummaryKPIs(data) {
   const engagementRate = postsLast30Days > 0 ? 
     ((totalEngagement / postsLast30Days) * 100).toFixed(1) : "0";
   
-  console.log("Engagement calculation:", {
-    likes: likes.length,
-    comments: comments.length,
-    totalEngagement,
-    postsLast30Days,
-    engagementRate
-  });
-  
   const kpis = {
     totalConnections,
     postsLast30Days,
     engagementRate: `${engagementRate}%`,
     connectionsLast30Days: recentConnections.length + recentInvitations.length
   };
-  
-  console.log("Summary KPIs:", kpis);
   return kpis;
 }
 
 function calculateMiniTrends(changelogData) {
-  console.log("=== MINI TRENDS CALCULATION ===");
-  
   const elements = changelogData?.elements || [];
-  console.log("Changelog elements for trends:", elements.length);
   
   // Get last 7 days of data
   const last7Days = [];
@@ -872,8 +782,6 @@ function calculateMiniTrends(changelogData) {
       value: day.engagements 
     }))
   };
-  
-  console.log("Mini trends:", trends);
   return trends;
 }
 

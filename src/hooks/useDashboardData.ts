@@ -46,8 +46,6 @@ export const useDashboardData = () => {
   return useQuery({
     queryKey: ['dashboard-data'],
     queryFn: async (): Promise<DashboardData> => {
-      console.log('Fetching dashboard data with token:', dmaToken ? 'present' : 'missing');
-      
       if (!dmaToken) {
         throw new Error('DMA token is required for dashboard data');
       }
@@ -58,8 +56,6 @@ export const useDashboardData = () => {
           'Content-Type': 'application/json',
         },
       });
-
-      console.log('Dashboard API response status:', response.status);
       
       if (!response.ok) {
         const errorText = await response.text();
@@ -68,7 +64,6 @@ export const useDashboardData = () => {
       }
 
       const data = await response.json();
-      console.log('Dashboard data received:', data);
       
       // Validate the response structure
       if (!data.profileEvaluation || !data.summaryKPIs || !data.miniTrends) {
@@ -85,9 +80,6 @@ export const useDashboardData = () => {
     refetchOnWindowFocus: false,
     onError: (error) => {
       console.error('Dashboard data query error:', error);
-    },
-    onSuccess: (data) => {
-      console.log('Dashboard data query success:', data);
     }
   });
 };

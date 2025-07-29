@@ -25,34 +25,44 @@ function App() {
   const { sidebarCollapsed } = useAppStore();
   const darkMode = false; // Force bright mode always
   const [authCheckComplete, setAuthCheckComplete] = useState(false);
+  const [hasProcessedUrlParams, setHasProcessedUrlParams] = useState(false);
 
   // Force light mode always
   useEffect(() => {
     document.documentElement.classList.remove('dark');
   }, []);
 
-  // Check for OAuth callback parameters
+  // Check for OAuth callback parameters only once on initial load
   useEffect(() => {
+    if (hasProcessedUrlParams) return;
+
     const urlParams = new URLSearchParams(window.location.search);
     const accessTokenParam = urlParams.get('access_token');
     const dmaTokenParam = urlParams.get('dma_token');
     const hasAuthParams = accessTokenParam || dmaTokenParam;
     
-    console.log('App useEffect - URL params:', {
-      accessToken: accessTokenParam ? 'present' : 'missing',
-      dmaToken: dmaTokenParam ? 'present' : 'missing',
-      hasAuthParams,
-      currentBasicAuth: isBasicAuthenticated,
-      currentFullAuth: isFullyAuthenticated,
-      storedAccessToken: accessToken ? 'present' : 'missing',
-      storedDmaToken: dmaToken ? 'present' : 'missing'
-    });
-    console.log('App useEffect - hasAuthParams:', hasAuthParams);
-    console.log('App useEffect - isBasicAuthenticated:', isBasicAuthenticated);
+    // Only log if there are auth params to process or if not authenticated
+    if (hasAuthParams || (!isBasicAuthenticated && !isFullyAuthenticated)) {
+      console.log('App: Processing authentication state', {
+        hasUrlParams: !!hasAuthParams,
+        isBasicAuthenticated,
+        isFullyAuthenticated,
+        tokensInStorage: {
+          accessToken: accessToken ? 'present' : 'missing',
+          dmaToken: dmaToken ? 'present' : 'missing'
+        }
+      });
+    }
     
-    // Set auth check as complete after checking URL params
+    // Clean up URL parameters after processing to prevent confusion
+    if (hasAuthParams && (isBasicAuthenticated || isFullyAuthenticated)) {
+      const cleanUrl = window.location.pathname;
+      window.history.replaceState({}, document.title, cleanUrl);
+    }
+    
+    setHasProcessedUrlParams(true);
     setAuthCheckComplete(true);
-  }, [isBasicAuthenticated, isFullyAuthenticated]);
+  }, [hasProcessedUrlParams, isBasicAuthenticated, isFullyAuthenticated, accessToken, dmaToken]);
 
   // Don't render anything until auth check is complete
   if (!authCheckComplete) {
@@ -63,46 +73,33 @@ function App() {
     );
   }
 
-  // Debug auth state
-  console.log('App render - Auth Debug:', {
-    accessToken: accessToken ? 'present' : 'missing',
-    dmaToken: dmaToken ? 'present' : 'missing',
-    isBasicAuthenticated,
-    isFullyAuthenticated,
-    shouldShowDashboard: isBasicAuthenticated && isFullyAuthenticated
-  });
-
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <div className="min-h-screen bg-gray-50">
           {(() => {
+            // Only check URL params if we haven't processed them yet
             const urlParams = new URLSearchParams(window.location.search);
-            const hasAuthParams = urlParams.has('access_token') || urlParams.has('dma_token');
+            const hasAuthParams = !hasProcessedUrlParams && 
+              (urlParams.has('access_token') || urlParams.has('dma_token'));
             
-            console.log('App render - hasAuthParams:', hasAuthParams, 'isBasicAuthenticated:', isBasicAuthenticated, 'isFullyAuthenticated:', isFullyAuthenticated);
-            
-            // Show AuthFlow if we have auth params in URL
+            // Show AuthFlow if we have unprocessed auth params in URL
             if (hasAuthParams) {
-              console.log('App render - showing AuthFlow for token processing');
               return <AuthFlow isDark={false} />;
             }
             
             // Show LandingPage if not authenticated at all
             if (!isBasicAuthenticated) {
-              console.log('App render - showing LandingPage');
               return <LandingPage />;
             }
             
             // Show AuthFlow for DMA step if basic auth but no DMA
             if (isBasicAuthenticated && !isFullyAuthenticated) {
-              console.log('App render - showing DMA AuthFlow');
               return <AuthFlow isDark={false} />;
             }
             
             // Show Dashboard if fully authenticated
             if (isBasicAuthenticated && isFullyAuthenticated && dmaToken) {
-              console.log('App render - showing Dashboard');
               return (
                 <div className="flex h-screen">
                   <Sidebar />
@@ -123,8 +120,7 @@ function App() {
               );
             }
             
-            // Fallback - show loading or landing page
-            console.log('App render - fallback to LandingPage');
+            // Fallback - show landing page
             return <LandingPage />;
           })()}
         </div>
