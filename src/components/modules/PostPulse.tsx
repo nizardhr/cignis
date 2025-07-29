@@ -74,8 +74,8 @@ export const PostPulse = () => {
     }
     
     if (post.mediaAssetId && dmaToken) {
-      // Use our media download function for LinkedIn assets
-      const url = `/.netlify/functions/linkedin-media-download?assetId=${post.mediaAssetId}`;
+      // Use our media download function for LinkedIn assets with token
+      const url = `/.netlify/functions/linkedin-media-download?assetId=${post.mediaAssetId}&token=${encodeURIComponent(dmaToken)}`;
       console.log("Generated media download URL:", url);
       return url;
     }

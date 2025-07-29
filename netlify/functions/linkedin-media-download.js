@@ -11,18 +11,22 @@ export async function handler(event, context) {
   }
 
   const { authorization } = event.headers;
-  const { assetId } = event.queryStringParameters || {};
+  const { assetId, token } = event.queryStringParameters || {};
 
   console.log("LinkedIn Media Download Function - Asset ID:", assetId);
+  console.log("LinkedIn Media Download Function - Token from query:", token ? "present" : "missing");
   console.log(
     "LinkedIn Media Download Function - Authorization header present:",
     !!authorization
   );
 
-  if (!authorization) {
+  // Use token from query params if authorization header is not present
+  const authToken = authorization || (token ? `Bearer ${token}` : null);
+  
+  if (!authToken) {
     return {
       statusCode: 401,
-      body: JSON.stringify({ error: "No authorization token" }),
+      body: JSON.stringify({ error: "No authorization token provided" }),
     };
   }
 
@@ -40,7 +44,7 @@ export async function handler(event, context) {
 
     const response = await fetch(url, {
       headers: {
-        Authorization: authorization,
+        Authorization: authToken,
         "LinkedIn-Version": "202312",
       },
     });
