@@ -30,7 +30,8 @@ export async function handler(event, context) {
       changelogData,
       skillsData,
       positionsData,
-      educationData
+      educationData,
+      allCommentsData
     ] = await Promise.all([
       fetchLinkedInData(authorization, "linkedin-snapshot", "PROFILE"),
       fetchLinkedInData(authorization, "linkedin-snapshot", "CONNECTIONS"),
@@ -38,7 +39,8 @@ export async function handler(event, context) {
       fetchLinkedInData(authorization, "linkedin-changelog", null, "count=100"),
       fetchLinkedInData(authorization, "linkedin-snapshot", "SKILLS"),
       fetchLinkedInData(authorization, "linkedin-snapshot", "POSITIONS"),
-      fetchLinkedInData(authorization, "linkedin-snapshot", "EDUCATION")
+      fetchLinkedInData(authorization, "linkedin-snapshot", "EDUCATION"),
+      fetchLinkedInData(authorization, "linkedin-snapshot", "ALL_COMMENTS")
     ]);
 
     console.log("Dashboard Data: All data fetched successfully");
@@ -51,7 +53,8 @@ export async function handler(event, context) {
       changelogData,
       skillsData,
       positionsData,
-      educationData
+      educationData,
+      allCommentsData
     });
 
     // Calculate summary KPIs
@@ -145,14 +148,19 @@ function calculateProfileEvaluation(data) {
     changelogData,
     skillsData,
     positionsData,
-    educationData
+    educationData,
+    allCommentsData
   } = data;
 
   console.log("Calculating profile evaluation with data:", {
     hasProfile: !!profileData,
     hasConnections: !!connectionsData,
     hasPosts: !!postsData,
-    hasChangelog: !!changelogData
+    hasChangelog: !!changelogData,
+    hasSkills: !!skillsData,
+    hasPositions: !!positionsData,
+    hasEducation: !!educationData,
+    hasComments: !!allCommentsData
   });
 
   const scores = {};
@@ -184,7 +192,7 @@ function calculateProfileEvaluation(data) {
   scores.engagementRate = calculateEngagementRate(postsData, changelogData, connectionsData);
 
   // 8. Mutual Interactions (0-10)
-  scores.mutualInteractions = calculateMutualInteractions(changelogData);
+  scores.mutualInteractions = calculateMutualInteractions(changelogData, allCommentsData);
 
   // 9. Profile Visibility Signals (0-10)
   scores.profileVisibility = calculateProfileVisibility(profileData);
@@ -208,7 +216,10 @@ function calculateProfileEvaluation(data) {
 
 function calculateProfileCompleteness({ profileData, skillsData, positionsData, educationData }) {
   let score = 0;
-  const profile = profileData?.elements?.[0]?.snapshotData?.[0] || {};
+  const profileSnapshot = profileData?.elements?.[0]?.snapshotData || [];
+  
+  // LinkedIn profile data might be an array, find the main profile entry
+  const profile = profileSnapshot.find(p => p["First Name"] || p["Last Name"]) || profileSnapshot[0] || {};
   
   // Basic info (4 points)
   if (profile["First Name"]) score += 1;
@@ -268,21 +279,33 @@ function calculateEngagementQuality(changelogData) {
   return 0;
 }
 
-function calculateNetworkGrowth(connectionsData) {
+function calculateNetworkGrowth(connectionsData, changelogData) {
   const connections = connectionsData?.elements?.[0]?.snapshotData || [];
   
+  // Also check changelog for invitation acceptances
+  const invitations = changelogData?.elements?.filter(e => 
+    e.resourceName === "invitations" && e.method === "CREATE"
+  ) || [];
+  
   const last30Days = Date.now() - (30 * 24 * 60 * 60 * 1000);
+  
+  // Count recent connections from snapshot data
   const recentConnections = connections.filter(conn => {
     const connectedDate = new Date(conn["Connected On"] || conn.connectedOn);
     return connectedDate.getTime() >= last30Days;
   });
   
+  // Add recent invitations from changelog
+  const recentInvitations = invitations.filter(inv => inv.capturedAt >= last30Days);
+  
+  const totalRecentGrowth = recentConnections.length + recentInvitations.length;
+  
   // Score based on recent growth
-  if (recentConnections.length >= 50) return 10;
-  if (recentConnections.length >= 30) return 8;
-  if (recentConnections.length >= 20) return 6;
-  if (recentConnections.length >= 10) return 4;
-  if (recentConnections.length >= 5) return 2;
+  if (totalRecentGrowth >= 50) return 10;
+  if (totalRecentGrowth >= 30) return 8;
+  if (totalRecentGrowth >= 20) return 6;
+  if (totalRecentGrowth >= 10) return 4;
+  if (totalRecentGrowth >= 5) return 2;
   return 0;
 }
 
@@ -314,19 +337,24 @@ function calculateAudienceRelevance(connectionsData) {
 }
 
 function calculateContentDiversity(postsData, changelogData) {
+  // Check both snapshot and changelog data for content types
+  const snapshotPosts = postsData?.elements?.[0]?.snapshotData || [];
   const posts = changelogData?.elements?.filter(e => 
     e.resourceName === "ugcPosts" && e.method === "CREATE"
   ) || [];
   
-  if (posts.length === 0) return 0;
+  const totalPosts = posts.length + snapshotPosts.length;
+  if (totalPosts === 0) return 0;
   
   const contentTypes = {
     text: 0,
     image: 0,
     video: 0,
-    article: 0
+    article: 0,
+    external: 0
   };
   
+  // Process changelog posts
   posts.forEach(post => {
     const content = post.activity?.specificContent?.["com.linkedin.ugc.ShareContent"];
     const media = content?.media;
@@ -338,6 +366,22 @@ function calculateContentDiversity(postsData, changelogData) {
       } else {
         contentTypes.image++;
       }
+    } else {
+      contentTypes.text++;
+    }
+  });
+  
+  // Process snapshot posts
+  snapshotPosts.forEach(post => {
+    const mediaType = post["Media Type"] || post.mediaType || "TEXT";
+    if (mediaType === "VIDEO") {
+      contentTypes.video++;
+    } else if (mediaType === "IMAGE") {
+      contentTypes.image++;
+    } else if (mediaType === "ARTICLE") {
+      contentTypes.article++;
+    } else if (post["Shared URL"] || post.sharedUrl) {
+      contentTypes.external++;
     } else {
       contentTypes.text++;
     }
@@ -378,9 +422,10 @@ function calculateEngagementRate(postsData, changelogData, connectionsData) {
   return 0;
 }
 
-function calculateMutualInteractions(changelogData) {
+function calculateMutualInteractions(changelogData, allCommentsData) {
   const elements = changelogData?.elements || [];
   
+  // Comments given by user (from changelog)
   const myLikes = elements.filter(e => 
     e.resourceName === "socialActions/likes" && e.method === "CREATE"
   );
@@ -388,7 +433,10 @@ function calculateMutualInteractions(changelogData) {
     e.resourceName === "socialActions/comments" && e.method === "CREATE"
   );
   
-  const totalInteractions = myLikes.length + myComments.length;
+  // Comments from snapshot (ALL_COMMENTS domain)
+  const snapshotComments = allCommentsData?.elements?.[0]?.snapshotData?.length || 0;
+  
+  const totalInteractions = myLikes.length + myComments.length + snapshotComments;
   
   // Score based on giving engagement to others
   if (totalInteractions >= 100) return 10;
@@ -400,7 +448,8 @@ function calculateMutualInteractions(changelogData) {
 }
 
 function calculateProfileVisibility(profileData) {
-  const profile = profileData?.elements?.[0]?.snapshotData?.[0] || {};
+  const profileSnapshot = profileData?.elements?.[0]?.snapshotData || [];
+  const profile = profileSnapshot.find(p => p["Profile Views"] || p["Search Appearances"]) || profileSnapshot[0] || {};
   
   let score = 0;
   
@@ -427,7 +476,8 @@ function calculateProfileVisibility(profileData) {
 
 function calculateProfessionalBrand(data) {
   const { profileData, postsData, positionsData } = data;
-  const profile = profileData?.elements?.[0]?.snapshotData?.[0] || {};
+  const profileSnapshot = profileData?.elements?.[0]?.snapshotData || [];
+  const profile = profileSnapshot.find(p => p["First Name"] || p["Last Name"]) || profileSnapshot[0] || {};
   
   let score = 0;
   
@@ -480,6 +530,13 @@ function calculateSummaryKPIs(data) {
     return connectedDate.getTime() >= last30Days;
   });
   
+  // Add invitations from changelog
+  const recentInvitations = changelogData?.elements?.filter(e => 
+    e.resourceName === "invitations" && 
+    e.method === "CREATE" && 
+    e.capturedAt >= last30Days
+  ) || [];
+  
   // Engagement rate
   const likes = changelogData?.elements?.filter(e => 
     e.resourceName === "socialActions/likes" && e.method === "CREATE"
@@ -496,7 +553,7 @@ function calculateSummaryKPIs(data) {
     totalConnections,
     postsLast30Days: recentPosts.length,
     engagementRate: `${engagementRate}%`,
-    connectionsLast30Days: recentConnections.length
+    connectionsLast30Days: recentConnections.length + recentInvitations.length
   };
 }
 
@@ -509,7 +566,7 @@ function calculateMiniTrends(changelogData) {
     const date = new Date();
     date.setDate(date.getDate() - i);
     last7Days.push({
-      date: date.toISOString().split('T')[0],
+      date: date.toLocaleDateString(),
       posts: 0,
       engagements: 0
     });
@@ -517,7 +574,7 @@ function calculateMiniTrends(changelogData) {
   
   // Count posts and engagements by day
   elements.forEach(element => {
-    const elementDate = new Date(element.capturedAt).toISOString().split('T')[0];
+    const elementDate = new Date(element.capturedAt).toLocaleDateString();
     const dayData = last7Days.find(day => day.date === elementDate);
     
     if (dayData) {
@@ -534,22 +591,28 @@ function calculateMiniTrends(changelogData) {
   });
   
   return {
-    posts: last7Days.map(day => ({ date: day.date, value: day.posts })),
-    engagements: last7Days.map(day => ({ date: day.date, value: day.engagements }))
+    posts: last7Days.map((day, index) => ({ 
+      date: `Day ${index + 1}`, 
+      value: day.posts 
+    })),
+    engagements: last7Days.map((day, index) => ({ 
+      date: `Day ${index + 1}`, 
+      value: day.engagements 
+    }))
   };
 }
 
 function getScoreExplanations() {
   return {
-    profileCompleteness: "Complete profile with headline, skills, experience, and education",
-    postingActivity: "Regular posting frequency in the last 30 days",
-    engagementQuality: "Average likes and comments received per post",
-    networkGrowth: "New connections added in the last 30 days",
-    audienceRelevance: "Industry diversity and professional connections",
-    contentDiversity: "Variety in content types (text, images, videos)",
-    engagementRate: "Engagement received relative to network size",
-    mutualInteractions: "Likes and comments given to others' content",
-    profileVisibility: "Profile views and search appearances",
-    professionalBrand: "Professional headline, industry, and content focus"
+    profileCompleteness: "Profile completeness based on filled fields (headline, skills, experience, education)",
+    postingActivity: "Posting frequency in the last 30 days from LinkedIn changelog",
+    engagementQuality: "Average engagement (likes + comments) received per post",
+    networkGrowth: "New connections and invitations in the last 30 days",
+    audienceRelevance: "Industry diversity and professional connection quality",
+    contentDiversity: "Variety in content types (text, images, videos, articles)",
+    engagementRate: "Total engagement relative to your network size",
+    mutualInteractions: "Engagement you give to others (likes, comments)",
+    profileVisibility: "Profile views and search appearances from LinkedIn",
+    professionalBrand: "Professional signals (headline, industry, current role)"
   };
 }

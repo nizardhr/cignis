@@ -54,9 +54,11 @@ export const MiniTrendsCard = ({ trends }: MiniTrendsCardProps) => {
               {postsTrend > 0 ? '+' : ''}{postsTrend}
             </div>
           </div>
-          <div className="h-16">
+          <div className="h-20">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={trends.posts}>
+                <XAxis dataKey="date" hide />
+                <YAxis hide />
                 <Line 
                   type="monotone" 
                   dataKey="value" 
@@ -86,9 +88,11 @@ export const MiniTrendsCard = ({ trends }: MiniTrendsCardProps) => {
               {engagementsTrend > 0 ? '+' : ''}{engagementsTrend}
             </div>
           </div>
-          <div className="h-16">
+          <div className="h-20">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={trends.engagements}>
+                <XAxis dataKey="date" hide />
+                <YAxis hide />
                 <Line 
                   type="monotone" 
                   dataKey="value" 

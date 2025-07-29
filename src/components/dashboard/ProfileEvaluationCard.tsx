@@ -18,15 +18,21 @@ export const ProfileEvaluationCard = ({
   const { setCurrentModule } = useAppStore();
 
   const getScoreColor = (score: number) => {
-    if (score >= 8) return 'text-green-600 bg-green-100';
-    if (score >= 5) return 'text-yellow-600 bg-yellow-100';
-    return 'text-red-600 bg-red-100';
+    if (score >= 8) return 'text-green-600 bg-green-100 border-green-200';
+    if (score >= 5) return 'text-yellow-600 bg-yellow-100 border-yellow-200';
+    return 'text-red-600 bg-red-100 border-red-200';
   };
 
   const getScoreIcon = (score: number) => {
     if (score >= 8) return <TrendingUp size={16} />;
     if (score >= 5) return <Minus size={16} />;
     return <TrendingDown size={16} />;
+  };
+
+  const getScoreLabel = (score: number) => {
+    if (score >= 8) return 'Excellent';
+    if (score >= 5) return 'Good';
+    return 'Needs Work';
   };
 
   const scoreItems = [
@@ -51,10 +57,23 @@ export const ProfileEvaluationCard = ({
       <div className="flex items-center justify-between mb-6">
         <h3 className="text-xl font-bold text-gray-900">Profile Evaluation</h3>
         <div className="flex items-center space-x-2">
-          <div className="text-3xl font-bold text-blue-600">
+          <div className={`text-3xl font-bold ${
+            overallScore >= 8 ? 'text-green-600' : 
+            overallScore >= 5 ? 'text-yellow-600' : 
+            'text-red-600'
+          }`}>
             {overallScore}/10
           </div>
-          <div className="text-sm text-gray-500">Overall</div>
+          <div className="text-right">
+            <div className="text-sm text-gray-500">Overall</div>
+            <div className={`text-xs font-medium ${
+              overallScore >= 8 ? 'text-green-600' : 
+              overallScore >= 5 ? 'text-yellow-600' : 
+              'text-red-600'
+            }`}>
+              {getScoreLabel(overallScore)}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -67,14 +86,14 @@ export const ProfileEvaluationCard = ({
             transition={{ delay: index * 0.05 }}
             className="group relative"
           >
-            <div className="flex items-center justify-between p-3 rounded-lg border border-gray-200 hover:border-gray-300 transition-colors">
+            <div className={`flex items-center justify-between p-3 rounded-lg border-2 hover:shadow-md transition-all ${getScoreColor(item.score)}`}>
               <div className="flex items-center space-x-3">
-                <div className={`p-2 rounded-full ${getScoreColor(item.score)}`}>
+                <div className={`p-2 rounded-full bg-white ${getScoreColor(item.score).split(' ')[0]}`}>
                   {getScoreIcon(item.score)}
                 </div>
                 <div>
                   <p className="font-medium text-gray-900 text-sm">{item.label}</p>
-                  <p className="text-xs text-gray-500">{explanations[item.key]}</p>
+                  <p className="text-xs text-gray-600">{getScoreLabel(item.score)}</p>
                 </div>
               </div>
               <div className="flex items-center space-x-2">
@@ -83,7 +102,7 @@ export const ProfileEvaluationCard = ({
                 </span>
                 <div className="relative">
                   <Info size={14} className="text-gray-400 cursor-help" />
-                  <div className="absolute bottom-full right-0 mb-2 w-64 p-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none">
+                  <div className="absolute bottom-full right-0 mb-2 w-72 p-3 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none shadow-lg">
                     {explanations[item.key]}
                   </div>
                 </div>

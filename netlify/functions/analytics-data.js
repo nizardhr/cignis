@@ -133,7 +133,7 @@ function calculatePostsEngagementsTrend(changelogData, timeRange) {
     const date = new Date();
     date.setDate(date.getDate() - i);
     dateRange.push({
-      date: date.toISOString().split('T')[0],
+      date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
       posts: 0,
       likes: 0,
       comments: 0,
@@ -143,7 +143,7 @@ function calculatePostsEngagementsTrend(changelogData, timeRange) {
   
   // Count activities by date
   elements.forEach(element => {
-    const elementDate = new Date(element.capturedAt).toISOString().split('T')[0];
+    const elementDate = new Date(element.capturedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const dayData = dateRange.find(day => day.date === elementDate);
     
     if (dayData) {
@@ -160,7 +160,7 @@ function calculatePostsEngagementsTrend(changelogData, timeRange) {
   });
   
   return dateRange.map(day => ({
-    date: new Date(day.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+    date: day.date,
     posts: day.posts,
     likes: day.likes,
     comments: day.comments,
@@ -190,10 +190,10 @@ function calculateConnectionsGrowth(connectionsData, timeRange) {
   startDate.setDate(endDate.getDate() - days);
   
   for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-    const dateStr = d.toISOString().split('T')[0];
+    const dateStr = d.toLocaleDateString();
     const connectionsOnDate = sortedConnections.filter(conn => {
       const connDate = new Date(conn["Connected On"] || conn.connectedOn);
-      return connDate.toISOString().split('T')[0] === dateStr;
+      return connDate.toLocaleDateString() === dateStr;
     }).length;
     
     cumulativeCount += connectionsOnDate;
@@ -336,7 +336,7 @@ function calculateMessagesSentReceived(changelogData) {
     const date = new Date();
     date.setDate(date.getDate() - i);
     dateRange.push({
-      date: date.toISOString().split('T')[0],
+      date: date.toLocaleDateString(),
       sent: 0,
       received: 0
     });
@@ -346,7 +346,7 @@ function calculateMessagesSentReceived(changelogData) {
   elements
     .filter(e => e.resourceName === "messages" && e.capturedAt >= last30Days)
     .forEach(message => {
-      const messageDate = new Date(message.capturedAt).toISOString().split('T')[0];
+      const messageDate = new Date(message.capturedAt).toLocaleDateString();
       const dayData = dateRange.find(day => day.date === messageDate);
       
       if (dayData) {

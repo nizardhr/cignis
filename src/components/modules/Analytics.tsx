@@ -167,7 +167,7 @@ export const Analytics = () => {
           <ResponsiveContainer width="100%" height={300}>
             <PieChart>
               <Pie
-                data={analyticsData.postTypes}
+                data={analyticsData.postTypesBreakdown}
                 cx="50%"
                 cy="50%"
                 outerRadius={80}
@@ -217,6 +217,9 @@ export const Analytics = () => {
               </div>
             </div>
           )}
+          <div className="mt-2 text-xs text-gray-600">
+            <strong>Tip:</strong> Use 3-5 relevant hashtags per post to increase discoverability
+          </div>
         </Card>
       </div>
 
@@ -233,17 +236,27 @@ export const Analytics = () => {
               </div>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={analyticsData.engagementPerPost}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="content" />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="likes" stackId="a" fill="#EF4444" name="Likes" />
-              <Bar dataKey="comments" stackId="a" fill="#8B5CF6" name="Comments" />
-              <Bar dataKey="shares" stackId="a" fill="#10B981" name="Shares" />
-            </BarChart>
-          </ResponsiveContainer>
+          {analyticsData.engagementPerPost.length > 0 ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={analyticsData.engagementPerPost}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="content" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="likes" stackId="a" fill="#EF4444" name="Likes" />
+                <Bar dataKey="comments" stackId="a" fill="#8B5CF6" name="Comments" />
+                <Bar dataKey="shares" stackId="a" fill="#10B981" name="Shares" />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-64 flex items-center justify-center text-gray-500">
+              <div className="text-center">
+                <Heart size={48} className="mx-auto mb-4 text-gray-300" />
+                <p>No engagement data available</p>
+                <p className="text-sm">Start posting to see engagement metrics</p>
+              </div>
+            </div>
+          )}
           <div className="mt-2 text-xs text-gray-600">
             <strong>Impact:</strong> {analyticsData.scoreImpacts.engagementQuality.impact}
           </div>
@@ -260,16 +273,26 @@ export const Analytics = () => {
               </div>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={300}>
-            <BarChart data={analyticsData.messagesSentReceived}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="sent" stackId="a" fill="#3B82F6" name="Sent" />
-              <Bar dataKey="received" stackId="a" fill="#10B981" name="Received" />
-            </BarChart>
-          </ResponsiveContainer>
+          {analyticsData.messagesSentReceived.some(d => d.sent > 0 || d.received > 0) ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={analyticsData.messagesSentReceived}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="sent" stackId="a" fill="#3B82F6" name="Sent" />
+                <Bar dataKey="received" stackId="a" fill="#10B981" name="Received" />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-64 flex items-center justify-center text-gray-500">
+              <div className="text-center">
+                <MessageCircle size={48} className="mx-auto mb-4 text-gray-300" />
+                <p>No message data available</p>
+                <p className="text-sm">Message activity will appear here</p>
+              </div>
+            </div>
+          )}
           <div className="mt-2 text-xs text-gray-600">
             <strong>Impact:</strong> {analyticsData.scoreImpacts.mutualInteractions.impact}
           </div>
