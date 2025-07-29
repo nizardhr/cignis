@@ -40,6 +40,9 @@ export interface ChangelogPostData {
 export class PostPulseProcessor {
   static processHistoricalData(data: HistoricalPostData): ProcessedPost[] {
     const posts: ProcessedPost[] = [];
+    
+    console.log("=== PROCESSING HISTORICAL DATA ===");
+    console.log("Raw historical data:", JSON.stringify(data, null, 2));
 
     if (!data.elements) return posts;
 
@@ -50,8 +53,11 @@ export class PostPulseProcessor {
       ) {
         element.snapshotData.forEach((share, index) => {
           try {
+            console.log("Processing historical share:", JSON.stringify(share, null, 2));
+            
             // Skip if this is not the user's own post (company posts, etc.)
             if (share.Visibility === "COMPANY" || share.Visibility === "ORGANIZATION") {
+              console.log("Skipping company/organization post");
               return;
             }
 
@@ -75,13 +81,21 @@ export class PostPulseProcessor {
             let thumbnail = null;
             let mediaAssetId = null;
             
+            console.log("Checking for media in historical post:", {
+              MediaUrl: share.MediaUrl,
+              MediaType: share.MediaType,
+              allKeys: Object.keys(share)
+            });
+            
             if (share.MediaUrl) {
               media = { url: share.MediaUrl };
               thumbnail = share.MediaUrl;
+              console.log("Found MediaUrl:", share.MediaUrl);
             } else if (share.MediaType && share.MediaType !== "TEXT") {
               // Historical posts may not have direct media URLs
               // We'll show a media type indicator instead
               media = { type: share.MediaType };
+              console.log("Found MediaType without URL:", share.MediaType);
             }
 
             posts.push({
@@ -127,6 +141,9 @@ export class PostPulseProcessor {
   static processChangelogData(data: ChangelogPostData): ProcessedPost[] {
     const posts: ProcessedPost[] = [];
 
+    console.log("=== PROCESSING CHANGELOG DATA ===");
+    console.log("Raw changelog data:", JSON.stringify(data, null, 2));
+    
     if (!data.elements) return posts;
 
     // Get the current user's ID from the first element (owner field)
@@ -179,12 +196,20 @@ export class PostPulseProcessor {
 
     postEvents.forEach((event) => {
       try {
+        console.log("=== PROCESSING POST EVENT ===");
+        console.log("Full event:", JSON.stringify(event, null, 2));
+        
         const processedContent =
           event.processedActivity?.specificContent?.[
             "com.linkedin.ugc.ShareContent"
           ];
         const activityContent =
           event.activity?.specificContent?.["com.linkedin.ugc.ShareContent"];
+
+        console.log("Extracted content structures:", {
+          processedContent: JSON.stringify(processedContent, null, 2),
+          activityContent: JSON.stringify(activityContent, null, 2)
+        });
 
         const shareCommentary =
           processedContent?.shareCommentary?.text ||
@@ -211,16 +236,24 @@ export class PostPulseProcessor {
         let mediaType = "TEXT";
         let mediaAssetId = null;
         
+        console.log("=== MEDIA EXTRACTION ===");
+        
         const mediaArray = processedContent?.media || activityContent?.media;
+        console.log("Media array found:", JSON.stringify(mediaArray, null, 2));
+        
         if (mediaArray && mediaArray.length > 0) {
           const firstMedia = mediaArray[0];
           console.log("Processing media for post:", postId, firstMedia);
           
           // Extract the digital media asset URN
           const mediaUrn = firstMedia?.media;
+          console.log("Media URN:", mediaUrn);
+          
           if (mediaUrn && typeof mediaUrn === 'string') {
             // Extract asset ID from URN like "urn:li:digitalmediaAsset:C5606AQF245TuEXNVXA"
             const assetMatch = mediaUrn.match(/urn:li:digitalmediaAsset:(.+)/);
+            console.log("Asset match result:", assetMatch);
+            
             if (assetMatch) {
               mediaAssetId = assetMatch[1];
               console.log("Extracted media asset ID:", mediaAssetId);
@@ -233,23 +266,37 @@ export class PostPulseProcessor {
                 status: firstMedia?.status || "READY"
               };
               mediaType = firstMedia?.mediaType || "IMAGE";
+              console.log("Generated thumbnail URL:", thumbnail);
             }
           }
           
           // Fallback: try to extract direct URLs if available
           if (!mediaAssetId) {
+            console.log("No asset ID found, looking for direct URLs...");
             const mediaUrl = firstMedia?.media?.downloadUrl ||
                              firstMedia?.media?.url ||
                              firstMedia?.downloadUrl ||
                              firstMedia?.url;
             
+            console.log("Found direct media URL:", mediaUrl);
+            
             if (mediaUrl) {
               media = { url: mediaUrl };
               thumbnail = mediaUrl;
               mediaType = firstMedia?.mediaType || "IMAGE";
+              console.log("Using direct URL as thumbnail:", mediaUrl);
             }
           }
+        } else {
+          console.log("No media array found in post");
         }
+
+        console.log("Final media extraction result:", {
+          media,
+          thumbnail,
+          mediaType,
+          mediaAssetId
+        });
 
         posts.push({
           id: postId,

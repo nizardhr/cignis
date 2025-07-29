@@ -36,6 +36,7 @@ export async function handler(event, context) {
   try {
     const url = `https://api.linkedin.com/mediaDownload/${assetId}`;
     console.log("LinkedIn Media Download Function - Calling URL:", url);
+    console.log("LinkedIn Media Download Function - Using token:", authorization ? "present" : "missing");
 
     const response = await fetch(url, {
       headers: {
@@ -54,6 +55,8 @@ export async function handler(event, context) {
     );
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.log("LinkedIn Media Download Function - Error response body:", errorText);
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
     }
 

@@ -60,17 +60,30 @@ export const PostPulse = () => {
   };
 
   const getThumbnailUrl = (post: ProcessedPost): string | null => {
+    console.log("Getting thumbnail URL for post:", post.id, {
+      mediaAssetId: post.mediaAssetId,
+      thumbnail: post.thumbnail,
+      media: post.media,
+      mediaType: post.mediaType,
+      hasError: imageLoadErrors.has(post.id)
+    });
+    
     if (imageLoadErrors.has(post.id)) {
+      console.log("Post has image load error, returning null");
       return null;
     }
     
     if (post.mediaAssetId && dmaToken) {
       // Use our media download function for LinkedIn assets
-      return `/.netlify/functions/linkedin-media-download?assetId=${post.mediaAssetId}`;
+      const url = `/.netlify/functions/linkedin-media-download?assetId=${post.mediaAssetId}`;
+      console.log("Generated media download URL:", url);
+      return url;
     }
     
     // Fallback to direct URL if available
-    return post.thumbnail || null;
+    const fallbackUrl = post.thumbnail || null;
+    console.log("Using fallback thumbnail URL:", fallbackUrl);
+    return fallbackUrl;
   };
   const handleRefresh = () => {
     PostPulseCache.clearCache();
@@ -373,17 +386,27 @@ export const PostPulse = () => {
                     </div>
 
                     {/* Thumbnail if available */}
-                    {getThumbnailUrl(post) && (
+                    {(() => {
+                      const thumbnailUrl = getThumbnailUrl(post);
+                      console.log("Rendering thumbnail for post:", post.id, "URL:", thumbnailUrl);
+                      return thumbnailUrl && (
                       <div className="w-full h-32 bg-gradient-to-br from-blue-100 to-purple-100 rounded-lg mb-3 flex items-center justify-center overflow-hidden">
                         <img
-                          src={getThumbnailUrl(post)!}
+                          src={thumbnailUrl}
                           alt="Post thumbnail"
                           className="w-full h-full object-cover"
-                          onError={() => handleImageError(post.id)}
+                          onError={(e) => {
+                            console.log("Image load error for post:", post.id, "URL:", thumbnailUrl);
+                            handleImageError(post.id);
+                          }}
+                          onLoad={() => {
+                            console.log("Image loaded successfully for post:", post.id);
+                          }}
                           loading="lazy"
                         />
                       </div>
-                    )}
+                      );
+                    })()}
 
                     {/* Media Type Indicator */}
                     {post.mediaType !== "TEXT" && !getThumbnailUrl(post) && (
