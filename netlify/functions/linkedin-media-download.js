@@ -26,6 +26,10 @@ export async function handler(event, context) {
   if (!authToken) {
     return {
       statusCode: 401,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
       body: JSON.stringify({ error: "No authorization token provided" }),
     };
   }
@@ -33,14 +37,18 @@ export async function handler(event, context) {
   if (!assetId) {
     return {
       statusCode: 400,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
       body: JSON.stringify({ error: "Asset ID is required" }),
     };
   }
 
   try {
-    const url = `https://api.linkedin.com/mediaDownload/${assetId}`;
+    const url = `https://api.linkedin.com/v2/assets/${assetId}`;
     console.log("LinkedIn Media Download Function - Calling URL:", url);
-    console.log("LinkedIn Media Download Function - Using token:", authorization ? "present" : "missing");
+    console.log("LinkedIn Media Download Function - Using auth token:", authToken ? "present" : "missing");
 
     const response = await fetch(url, {
       headers: {
@@ -61,7 +69,65 @@ export async function handler(event, context) {
     if (!response.ok) {
       const errorText = await response.text();
       console.log("LinkedIn Media Download Function - Error response body:", errorText);
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      
+      // Try alternative endpoint if first one fails
+      console.log("LinkedIn Media Download Function - Trying alternative endpoint...");
+      const altUrl = `https://api.linkedin.com/mediaDownload/${assetId}`;
+      console.log("LinkedIn Media Download Function - Alternative URL:", altUrl);
+      
+      const altResponse = await fetch(altUrl, {
+        headers: {
+          Authorization: authToken,
+          "LinkedIn-Version": "202312",
+        },
+      });
+      
+      console.log("LinkedIn Media Download Function - Alternative response status:", altResponse.status);
+      
+      if (!altResponse.ok) {
+        const altErrorText = await altResponse.text();
+        console.log("LinkedIn Media Download Function - Alternative error response:", altErrorText);
+        
+        return {
+          statusCode: altResponse.status,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+          body: JSON.stringify({
+            error: "Failed to download LinkedIn media",
+            details: `Primary: ${response.status} ${response.statusText}, Alternative: ${altResponse.status} ${altResponse.statusText}`,
+            primaryError: errorText,
+            alternativeError: altErrorText
+          }),
+        };
+      }
+      
+      // Use alternative response if successful
+      const altImageBuffer = await altResponse.arrayBuffer();
+      const altContentType = altResponse.headers.get('content-type') || 'image/jpeg';
+      
+      console.log("LinkedIn Media Download Function - Alternative success, image size:", altImageBuffer.byteLength, "bytes");
+      
+      const altBase64Image = Buffer.from(altImageBuffer).toString('base64');
+      const altDataUrl = `data:${altContentType};base64,${altBase64Image}`;
+      
+      return {
+        statusCode: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
+          "Cache-Control": "public, max-age=3600",
+        },
+        body: JSON.stringify({
+          success: true,
+          dataUrl: altDataUrl,
+          contentType: altContentType,
+          size: altImageBuffer.byteLength,
+          source: "alternative"
+        }),
+      };
     }
 
     // Get the binary data
@@ -91,6 +157,7 @@ export async function handler(event, context) {
         dataUrl: dataUrl,
         contentType: contentType,
         size: imageBuffer.byteLength,
+        source: "primary"
       }),
     };
   } catch (error) {
