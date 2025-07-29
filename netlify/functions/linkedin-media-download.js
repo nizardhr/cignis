@@ -41,20 +41,12 @@ export async function handler(event) {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
         },
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
         body: "Missing assetId" 
       };
     }
     if (!token) {
       return { 
         statusCode: 401, 
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
         headers: {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
@@ -68,10 +60,6 @@ export async function handler(event) {
     if (cleanAssetId.includes(":")) {
       return { 
         statusCode: 400, 
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
         headers: {
           "Content-Type": "application/json",
           "Access-Control-Allow-Origin": "*",
@@ -94,7 +82,6 @@ export async function handler(event) {
       headers: { 
         Authorization: `Bearer ${token}`,
         "User-Agent": "LinkedInGrowth/1.0"
-        "User-Agent": "LinkedInGrowth/1.0"
       },
       redirect: "follow"
     });
@@ -111,13 +98,6 @@ export async function handler(event) {
       console.log("LinkedIn Media Download - Error response body:", text);
       // Relay LinkedIn's actual reason for 400/401/403/404
       return { 
-        statusCode: li.status, 
-        headers: {
-          "Content-Type": "application/json",
-          "Access-Control-Allow-Origin": "*",
-        },
-        body: `LinkedIn response ${li.status}: ${text || "No body"}` 
-      };
         statusCode: li.status, 
         headers: {
           "Content-Type": "application/json",
@@ -144,10 +124,6 @@ export async function handler(event) {
         "Access-Control-Allow-Origin": "*",
         "Cache-Control": "public, max-age=3600"
       },
-        "Content-Type": contentType,
-        "Access-Control-Allow-Origin": "*",
-        "Cache-Control": "public, max-age=3600"
-      },
       body: buf.toString("base64"),
       isBase64Encoded: true
     };
@@ -156,10 +132,6 @@ export async function handler(event) {
     console.error("LinkedIn Media Download - Server error:", err);
     return { 
       statusCode: 500, 
-      headers: {
-        "Content-Type": "application/json",
-        "Access-Control-Allow-Origin": "*",
-      },
       headers: {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*",
