@@ -97,6 +97,8 @@ export const usePostPulseData = (
         historicalPosts.push(...processed);
       });
 
+      console.log(`PostPulse: Processed ${historicalPosts.length} historical posts`);
+
       // Merge with existing posts
       const merged = PostPulseProcessor.mergeAndDeduplicatePosts(
         historicalPosts,
@@ -111,7 +113,7 @@ export const usePostPulseData = (
         PostPulseCache.setCache(merged, merged.length, hasMoreHistorical);
       }
 
-      console.log("Processed historical posts:", historicalPosts.length);
+      console.log(`PostPulse: Final merged posts count: ${merged.length}`);
     }
   }, [historicalData, hasMoreHistorical]);
 
@@ -120,6 +122,8 @@ export const usePostPulseData = (
     if (changelogData?.elements) {
       const realtimePosts =
         PostPulseProcessor.processChangelogData(changelogData);
+
+      console.log(`PostPulse: Processed ${realtimePosts.length} realtime posts`);
 
       // Merge with existing posts
       const merged = PostPulseProcessor.mergeAndDeduplicatePosts(
@@ -135,7 +139,7 @@ export const usePostPulseData = (
         PostPulseCache.setCache(merged, merged.length, hasMoreHistorical);
       }
 
-      console.log("Processed realtime posts:", realtimePosts.length);
+      console.log(`PostPulse: Final merged posts count: ${merged.length}`);
     }
   }, [changelogData, hasMoreHistorical]);
 

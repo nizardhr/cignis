@@ -360,7 +360,22 @@ export const PostPulse = () => {
                           className="w-full h-full object-cover"
                           onError={(e) => {
                             const target = e.target as HTMLImageElement;
+                            // Hide the image and show a placeholder instead
                             target.style.display = "none";
+                            const parent = target.parentElement;
+                            if (parent && !parent.querySelector('.thumbnail-placeholder')) {
+                              const placeholder = document.createElement('div');
+                              placeholder.className = 'thumbnail-placeholder text-center';
+                              placeholder.innerHTML = `
+                                <div class="text-gray-600 mb-2">
+                                  <svg class="w-8 h-8 mx-auto" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M4 3a2 2 0 00-2 2v10a2 2 0 002 2h12a2 2 0 002-2V5a2 2 0 00-2-2H4zm12 12H4l4-8 3 6 2-4 3 6z" clip-rule="evenodd" />
+                                  </svg>
+                                </div>
+                                <span class="text-sm text-gray-600">${post.mediaType} Content</span>
+                              `;
+                              parent.appendChild(placeholder);
+                            }
                           }}
                         />
                       </div>
