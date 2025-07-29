@@ -142,6 +142,7 @@ export async function handler(event, context) {
           headers: {
             "Content-Type": "application/json",
             "Access-Control-Allow-Origin": "*",
+          }
           body: JSON.stringify({
             success: true,
             dataUrl: thirdDataUrl,
