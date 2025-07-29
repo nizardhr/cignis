@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { AlertCircle, Zap } from "lucide-react";
+import { AlertCircle, Zap, RefreshCw } from "lucide-react";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { LoadingSpinner } from "../ui/LoadingSpinner";
@@ -14,7 +14,8 @@ import { useAppStore } from "../../stores/appStore";
 export const Dashboard = () => {
   const { dmaToken } = useAuthStore();
   const { setCurrentModule } = useAppStore();
-  const { data: dashboardData, isLoading, error } = useDashboardData();
+  const { data: dashboardData, isLoading, error, refetch } = useDashboardData();
+  const [debugMode, setDebugMode] = useState(false);
 
   if (!dmaToken) {
     return (
@@ -52,36 +53,32 @@ export const Dashboard = () => {
   if (error) {
     return (
       <div className="text-center py-12">
-        {error.message?.includes("Rate Limit") ? (
-          <div className="max-w-md mx-auto">
-            <div className="mb-6">
-              <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <AlertCircle size={32} className="text-orange-600" />
-              </div>
-              <h2 className="text-xl font-bold text-gray-900 mb-2">
-                LinkedIn API Rate Limit Exceeded
-              </h2>
-              <p className="text-gray-600 mb-4">
-                You've reached the daily limit for LinkedIn API calls.
-              </p>
-            </div>
-            <div className="space-y-3">
-              <Button
-                variant="outline"
-                onClick={() => window.location.reload()}
-                className="w-full"
-              >
-                Try Again
-              </Button>
-            </div>
+        <AlertCircle size={48} className="mx-auto text-red-400 mb-4" />
+        <h2 className="text-xl font-bold text-gray-900 mb-2">
+          Error Loading Dashboard
+        </h2>
+        <p className="text-gray-600 mb-4">
+          {error.message || "Failed to load dashboard data"}
+        </p>
+        <div className="space-y-3">
+          <Button variant="primary" onClick={() => refetch()}>
+            <RefreshCw size={16} className="mr-2" />
+            Try Again
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setDebugMode(!debugMode)}
+          >
+            {debugMode ? "Hide" : "Show"} Debug Info
+          </Button>
+        </div>
+        {debugMode && (
+          <div className="mt-6 p-4 bg-gray-100 rounded-lg text-left">
+            <h3 className="font-semibold mb-2">Debug Information:</h3>
+            <pre className="text-xs overflow-auto">
+              {JSON.stringify(error, null, 2)}
+            </pre>
           </div>
-        ) : (
-          <>
-            <p className="text-red-600 mb-4">Error loading dashboard: {error.message}</p>
-            <Button variant="outline" onClick={() => window.location.reload()}>
-              Retry
-            </Button>
-          </>
         )}
       </div>
     );
@@ -94,6 +91,29 @@ export const Dashboard = () => {
       transition={{ duration: 0.5 }}
       className="space-y-6"
     >
+      {/* Debug Panel */}
+      {debugMode && dashboardData && (
+        <Card variant="glass" className="p-4 bg-yellow-50">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-semibold">Debug Information</h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setDebugMode(false)}
+            >
+              Hide
+            </Button>
+          </div>
+          <div className="text-sm space-y-2">
+            <div>Last Updated: {dashboardData.lastUpdated}</div>
+            <div>Overall Score: {dashboardData.profileEvaluation.overallScore}/10</div>
+            <div>Total Connections: {dashboardData.summaryKPIs.totalConnections}</div>
+            <div>Posts (30d): {dashboardData.summaryKPIs.postsLast30Days}</div>
+            <div>Engagement Rate: {dashboardData.summaryKPIs.engagementRate}</div>
+          </div>
+        </Card>
+      )}
+
       {/* Profile Evaluation */}
       <ProfileEvaluationCard
         scores={dashboardData.profileEvaluation.scores}
@@ -109,10 +129,19 @@ export const Dashboard = () => {
 
       {/* Quick Actions */}
       <Card variant="glass" className="p-6">
-        <h3 className="text-lg font-semibold mb-4 flex items-center">
-          <Zap className="mr-2" size={20} />
-          Quick Actions
-        </h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold flex items-center">
+            <Zap className="mr-2" size={20} />
+            Quick Actions
+          </h3>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setDebugMode(!debugMode)}
+          >
+            {debugMode ? "Hide" : "Show"} Debug
+          </Button>
+        </div>
         <div className="space-y-3">
           <motion.button
             whileHover={{ scale: 1.02 }}
@@ -120,23 +149,23 @@ export const Dashboard = () => {
             className="w-full p-3 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-lg hover:from-indigo-600 hover:to-purple-600 transition-all"
             onClick={() => setCurrentModule("analytics")}
           >
-            View Detailed Analytics
+            📊 View Detailed Analytics
           </motion.button>
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             className="w-full p-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-600 hover:to-pink-600 transition-all"
-            onClick={() => (window.location.href = "/?module=postgen")}
+            onClick={() => setCurrentModule("postgen")}
           >
-            Generate New Post
+            ✍️ Generate New Post
           </motion.button>
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             className="w-full p-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg hover:from-green-600 hover:to-emerald-600 transition-all"
-            onClick={() => (window.location.href = "/?module=analytics")}
+            onClick={() => setCurrentModule("postpulse")}
           >
-            View Analytics
+            📈 Analyze Posts (PostPulse)
           </motion.button>
           <motion.button
             whileHover={{ scale: 1.02 }}
@@ -144,7 +173,7 @@ export const Dashboard = () => {
             className="w-full p-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg hover:from-green-600 hover:to-emerald-600 transition-all"
             onClick={() => setCurrentModule("scheduler")}
           >
-            Schedule Content
+            📅 Schedule Content
           </motion.button>
         </div>
       </Card>

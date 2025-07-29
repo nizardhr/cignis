@@ -46,6 +46,8 @@ export const useDashboardData = () => {
   return useQuery({
     queryKey: ['dashboard-data'],
     queryFn: async (): Promise<DashboardData> => {
+      console.log('Fetching dashboard data with token:', dmaToken ? 'present' : 'missing');
+      
       const response = await fetch('/.netlify/functions/dashboard-data', {
         headers: {
           'Authorization': `Bearer ${dmaToken}`,
@@ -53,11 +55,17 @@ export const useDashboardData = () => {
         },
       });
 
+      console.log('Dashboard API response status:', response.status);
+      
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Dashboard API error:', response.status, errorText);
         throw new Error('Failed to fetch dashboard data');
       }
 
-      return response.json();
+      const data = await response.json();
+      console.log('Dashboard data received:', data);
+      return data;
     },
     enabled: !!dmaToken,
     staleTime: 10 * 60 * 1000, // 10 minutes

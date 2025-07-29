@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Calendar, TrendingUp, Users, MessageCircle, Eye, BarChart3, Heart, FileText, Info } from 'lucide-react';
+import { Calendar, TrendingUp, Users, MessageCircle, Eye, BarChart3, Heart, FileText, Info, RefreshCw, AlertCircle } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { LoadingSpinner } from '../ui/LoadingSpinner';
@@ -29,8 +29,9 @@ const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8', '#82ca9d'
 
 export const Analytics = () => {
   const [timeRange, setTimeRange] = useState<TimeRange>('30d');
+  const [debugMode, setDebugMode] = useState(false);
   const { dmaToken } = useAuthStore();
-  const { data: analyticsData, isLoading, error } = useAnalyticsData(timeRange);
+  const { data: analyticsData, isLoading, error, refetch } = useAnalyticsData(timeRange);
 
   if (!dmaToken) {
     return (
@@ -67,10 +68,33 @@ export const Analytics = () => {
   if (error || !analyticsData) {
     return (
       <div className="text-center py-12">
-        <p className="text-red-600 mb-4">Error loading analytics: {error?.message || 'Unknown error'}</p>
-        <Button variant="outline" onClick={() => window.location.reload()}>
-          Retry
-        </Button>
+        <AlertCircle size={48} className="mx-auto text-red-400 mb-4" />
+        <h2 className="text-xl font-bold text-gray-900 mb-2">
+          Error Loading Analytics
+        </h2>
+        <p className="text-gray-600 mb-4">
+          {error?.message || 'Failed to load analytics data'}
+        </p>
+        <div className="space-y-3">
+          <Button variant="primary" onClick={() => refetch()}>
+            <RefreshCw size={16} className="mr-2" />
+            Try Again
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setDebugMode(!debugMode)}
+          >
+            {debugMode ? "Hide" : "Show"} Debug Info
+          </Button>
+        </div>
+        {debugMode && error && (
+          <div className="mt-6 p-4 bg-gray-100 rounded-lg text-left">
+            <h3 className="font-semibold mb-2">Debug Information:</h3>
+            <pre className="text-xs overflow-auto">
+              {JSON.stringify(error, null, 2)}
+            </pre>
+          </div>
+        )}
       </div>
     );
   }
@@ -84,19 +108,53 @@ export const Analytics = () => {
     >
       <div className="flex items-center justify-between">
         <h2 className="text-2xl font-bold">Detailed Analytics</h2>
-        <div className="flex space-x-2">
-          {(['7d', '30d', '90d'] as TimeRange[]).map((range) => (
-            <Button
-              key={range}
-              variant={timeRange === range ? 'primary' : 'outline'}
-              size="sm"
-              onClick={() => setTimeRange(range)}
-            >
-              {range}
-            </Button>
-          ))}
+        <div className="flex items-center space-x-3">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setDebugMode(!debugMode)}
+          >
+            {debugMode ? "Hide" : "Show"} Debug
+          </Button>
+          <div className="flex space-x-2">
+            {(['7d', '30d', '90d'] as TimeRange[]).map((range) => (
+              <Button
+                key={range}
+                variant={timeRange === range ? 'primary' : 'outline'}
+                size="sm"
+                onClick={() => setTimeRange(range)}
+              >
+                {range}
+              </Button>
+            ))}
+          </div>
         </div>
       </div>
+
+      {/* Debug Panel */}
+      {debugMode && analyticsData && (
+        <Card variant="glass" className="p-4 bg-yellow-50">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="font-semibold">Debug Information</h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setDebugMode(false)}
+            >
+              Hide
+            </Button>
+          </div>
+          <div className="text-sm space-y-2">
+            <div>Time Range: {analyticsData.timeRange}</div>
+            <div>Last Updated: {analyticsData.lastUpdated}</div>
+            <div>Posts Trend Data Points: {analyticsData.postsEngagementsTrend?.length || 0}</div>
+            <div>Connections Growth Data Points: {analyticsData.connectionsGrowth?.length || 0}</div>
+            <div>Post Types: {analyticsData.postTypesBreakdown?.length || 0}</div>
+            <div>Top Hashtags: {analyticsData.topHashtags?.length || 0}</div>
+            <div>Engagement Per Post: {analyticsData.engagementPerPost?.length || 0}</div>
+          </div>
+        </Card>
+      )}
 
       {/* Charts Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
