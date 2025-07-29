@@ -63,6 +63,31 @@ export const PostPulse = () => {
     });
   };
 
+  // Add a function to test the media download and log the actual error
+  const testMediaDownload = async (assetId: string) => {
+    try {
+      const response = await fetch(
+        `/.netlify/functions/linkedin-media-download?assetId=${assetId}&token=${encodeURIComponent(dmaToken!)}`
+      );
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.log(`Media download test failed for ${assetId}:`, {
+          status: response.status,
+          statusText: response.statusText,
+          errorBody: errorText
+        });
+        return { success: false, error: errorText };
+      }
+      
+      console.log(`Media download test succeeded for ${assetId}`);
+      return { success: true };
+    } catch (error) {
+      console.log(`Media download test error for ${assetId}:`, error);
+      return { success: false, error: error.message };
+    }
+  };
+
   const getThumbnailUrl = (post: ProcessedPost): string | null => {
     console.log("Getting thumbnail URL for post:", post.id, {
       mediaAssetId: post.mediaAssetId,
@@ -291,6 +316,20 @@ export const PostPulse = () => {
                 .filter(([_, v]) => v)
                 .map(([k]) => k)
                 .join(", ")}
+            </div>
+            <div className="mt-4">
+              <h4 className="font-semibold">Test Media Download:</h4>
+              {posts.slice(0, 3).map(post => (
+                <div key={post.id} className="mt-2">
+                  <button
+                    onClick={() => testMediaDownload(post.mediaAssetId!)}
+                    className="text-blue-600 hover:text-blue-800 text-xs"
+                    disabled={!post.mediaAssetId}
+                  >
+                    Test {post.mediaAssetId?.substring(0, 8)}...
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         </Card>
