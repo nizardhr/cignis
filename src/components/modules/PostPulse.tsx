@@ -56,7 +56,11 @@ export const PostPulse = () => {
   });
 
   const handleImageError = (postId: string) => {
-    setImageLoadErrors(prev => new Set([...prev, postId]));
+    setImageLoadErrors(prev => {
+      const newSet = new Set([...prev, postId]);
+      console.log(`Image load error for post ${postId}, total errors: ${newSet.size}`);
+      return newSet;
+    });
   };
 
   const getThumbnailUrl = (post: ProcessedPost): string | null => {
