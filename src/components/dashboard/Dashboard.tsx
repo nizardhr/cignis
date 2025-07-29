@@ -13,13 +13,14 @@ import {
   MessageCircle,
   Share,
   User,
+  AlertCircle,
 } from "lucide-react";
 import { StatsCard } from "./StatsCard";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { LoadingSpinner } from "../ui/LoadingSpinner";
 import { useAuthStore } from "../../stores/authStore";
-import { LinkedInDataService } from "../../services/linkedin-data-service";
+import { useLinkedInSnapshot, useLinkedInChangelog } from "../../hooks/useLinkedInData";
 import {
   BarChart,
   Bar,
@@ -110,132 +111,151 @@ const COLORS = ["#0088FE", "#00C49F", "#FFBB28", "#FF8042", "#8884D8"];
 export const Dashboard = () => {
   const { dmaToken, accessToken, isBasicAuthenticated, isFullyAuthenticated } =
     useAuthStore();
-  const [metrics, setMetrics] = useState<any>({
-    profileViews: 0,
-    searchAppearances: 0,
-    uniqueViewers: 0,
-    connections: 0,
-    connectionGrowth: 0,
-    totalEngagement: 0,
-    avgPerPost: "0",
-    totalLikes: 0,
-    totalComments: 0,
-    totalPosts: 0,
-    postsCreated: 0,
-    commentsGiven: 0,
-    likesGiven: 0,
-    // New analytics metrics
-    profileStrength: 0,
-    networkQuality: 0,
-    socialActivity: 0,
-    contentPerformance: 0,
-    profileAnalysis: null,
-    networkAnalysis: null,
-    socialAnalysis: null,
-    contentAnalysis: null,
-  });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  
+  // Use the existing hooks to fetch data
+  const { data: profileData, isLoading: profileLoading, error: profileError } = useLinkedInSnapshot('PROFILE');
+  const { data: connectionsData, isLoading: connectionsLoading } = useLinkedInSnapshot('CONNECTIONS');
+  const { data: postsData, isLoading: postsLoading } = useLinkedInSnapshot('MEMBER_SHARE_INFO');
+  const { data: changelogData, isLoading: changelogLoading } = useLinkedInChangelog(100);
+  
+  const [processedMetrics, setProcessedMetrics] = useState<any>(null);
+  
+  const isLoading = profileLoading || connectionsLoading || postsLoading || changelogLoading;
+  const hasError = profileError;
 
+  // Process the data when it's available
   useEffect(() => {
-    const loadMetrics = async () => {
-      if (!dmaToken) {
-        setLoading(false);
-        return;
-      }
+    if (!dmaToken || isLoading) return;
 
-      try {
-        setLoading(true);
-        setError(null);
+    console.log('Dashboard - Processing data:', {
+      profileData: profileData?.elements?.[0],
+      connectionsData: connectionsData?.elements?.[0],
+      postsData: postsData?.elements?.[0],
+      changelogData: changelogData?.elements?.length
+    });
 
-        const service = new LinkedInDataService();
+    // Process profile data
+    const profileInfo = profileData?.elements?.[0]?.snapshotData?.[0] || {};
+    const profileViews = parseInt(profileInfo['Profile Views'] || profileInfo.profileViews || '0') || 0;
+    const searchAppearances = parseInt(profileInfo['Search Appearances'] || profileInfo.searchAppearances || '0') || 0;
+    
+    // Process connections data
+    const connections = connectionsData?.elements?.[0]?.snapshotData || [];
+    const totalConnections = connections.length;
+    
+    // Calculate recent connections (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    const recentConnections = connections.filter((conn: any) => {
+      const connectedDate = new Date(conn['Connected On'] || conn.connectedOn || conn.date);
+      return connectedDate >= thirtyDaysAgo;
+    }).length;
+    
+    // Process posts data
+    const posts = postsData?.elements?.[0]?.snapshotData || [];
+    const totalPosts = posts.length;
+    
+    // Calculate total engagement from posts
+    let totalLikes = 0;
+    let totalComments = 0;
+    let totalShares = 0;
+    
+    posts.forEach((post: any) => {
+      totalLikes += parseInt(post['Likes Count'] || post.likesCount || '0') || 0;
+      totalComments += parseInt(post['Comments Count'] || post.commentsCount || '0') || 0;
+      totalShares += parseInt(post['Shares Count'] || post.sharesCount || '0') || 0;
+    });
+    
+    const totalEngagement = totalLikes + totalComments + totalShares;
+    const avgEngagementPerPost = totalPosts > 0 ? (totalEngagement / totalPosts).toFixed(1) : '0';
+    
+    // Process changelog data for activity metrics
+    const changelogElements = changelogData?.elements || [];
+    const postsCreated = changelogElements.filter((e: any) => e.resourceName === 'ugcPosts' && e.method === 'CREATE').length;
+    const likesGiven = changelogElements.filter((e: any) => e.resourceName === 'socialActions/likes').length;
+    const commentsGiven = changelogElements.filter((e: any) => e.resourceName === 'socialActions/comments').length;
+    
+    // Calculate derived metrics
+    const profileStrength = Math.min(
+      (profileViews > 0 ? 25 : 0) + 
+      (totalConnections > 50 ? 25 : totalConnections / 2) + 
+      (totalPosts > 0 ? 25 : 0) + 
+      (totalEngagement > 0 ? 25 : 0), 
+      100
+    );
+    
+    const networkQuality = Math.min(
+      (totalConnections / 100) * 5 + 
+      (recentConnections / 10) * 3 + 
+      2, 
+      10
+    );
+    
+    const socialActivity = Math.min(
+      (likesGiven / 50) * 4 + 
+      (commentsGiven / 20) * 3 + 
+      (postsCreated > 0 ? 3 : 0), 
+      10
+    );
+    
+    const contentPerformance = Math.min(
+      (totalPosts / 10) * 3 + 
+      (parseFloat(avgEngagementPerPost) / 10) * 4 + 
+      (totalPosts > 0 ? 3 : 0), 
+      10
+    );
 
-        console.log("=== DASHBOARD DEBUG ===");
-        console.log("DMA Token available:", !!dmaToken);
-        console.log(
-          "Token preview:",
-          dmaToken ? `${dmaToken.substring(0, 20)}...` : "No token"
-        );
-
-        // Load all metrics using the new analytics service
-        console.log("Fetching profile metrics...");
-        const profileMetrics = await service.getProfileMetrics();
-
-        console.log("Raw LinkedIn data from getProfileMetrics:", {
-          profileMetrics,
-          profileViews: profileMetrics.profileViews,
-          searchAppearances: profileMetrics.searchAppearances,
-          uniqueViewers: profileMetrics.uniqueViewers,
-          totalConnections: profileMetrics.totalConnections,
-          totalPosts: profileMetrics.totalPosts,
-          likesGiven: profileMetrics.likesGiven,
-          profileStrength: profileMetrics.profileStrength,
-          networkQuality: profileMetrics.networkQuality,
-          socialActivity: profileMetrics.socialActivity,
-          contentPerformance: profileMetrics.contentPerformance,
-          profileAnalysis: profileMetrics.profileAnalysis,
-          networkAnalysis: profileMetrics.networkAnalysis,
-          socialAnalysis: profileMetrics.socialAnalysis,
-          contentAnalysis: profileMetrics.contentAnalysis,
-        });
-
-        const newMetrics = {
-          profileViews: profileMetrics.profileViews || 0,
-          searchAppearances: profileMetrics.searchAppearances || 0,
-          uniqueViewers: profileMetrics.uniqueViewers || 0,
-          connections: profileMetrics.totalConnections || 0,
-          connectionGrowth:
-            profileMetrics.networkAnalysis?.analysis?.recentGrowth || 0,
-          totalEngagement: profileMetrics.totalEngagement || 0,
-          avgPerPost: "0", // Will be calculated from posts
-          totalLikes: profileMetrics.totalLikes || 0,
-          totalComments: profileMetrics.totalComments || 0,
-          totalPosts: profileMetrics.totalPosts || 0,
-          postsCreated: profileMetrics.totalPosts || 0,
-          commentsGiven: profileMetrics.likesGiven || 0,
-          likesGiven: profileMetrics.likesGiven || 0,
-          // New analytics metrics
-          profileStrength: profileMetrics.profileStrength || 0,
-          networkQuality: profileMetrics.networkQuality || 0,
-          socialActivity: profileMetrics.socialActivity || 0,
-          contentPerformance: profileMetrics.contentPerformance || 0,
-          profileAnalysis: profileMetrics.profileAnalysis || null,
-          networkAnalysis: profileMetrics.networkAnalysis || null,
-          socialAnalysis: profileMetrics.socialAnalysis || null,
-          contentAnalysis: profileMetrics.contentAnalysis || null,
-        };
-
-        console.log("Calculated metrics for dashboard:", {
-          profileStrength: newMetrics.profileStrength,
-          networkQuality: newMetrics.networkQuality,
-          socialActivity: newMetrics.socialActivity,
-          contentPerformance: newMetrics.contentPerformance,
-          connections: newMetrics.connections,
-          totalPosts: newMetrics.totalPosts,
-          likesGiven: newMetrics.likesGiven,
-        });
-
-        console.log("StatsCard values that will be rendered:", {
-          profileStrength: `${newMetrics.profileStrength || 0}%`,
-          networkQuality: `${newMetrics.networkQuality || 0}/10`,
-          socialActivity: `${newMetrics.socialActivity || 0}/10`,
-          contentPerformance: `${newMetrics.contentPerformance || 0}/10`,
-        });
-
-        setMetrics(newMetrics);
-      } catch (err) {
-        setError(
-          err instanceof Error
-            ? err.message
-            : "Failed to load dashboard metrics"
-        );
-      } finally {
-        setLoading(false);
+    const metrics = {
+      profileViews,
+      searchAppearances,
+      totalConnections,
+      recentConnections,
+      totalPosts,
+      totalEngagement,
+      avgEngagementPerPost,
+      totalLikes,
+      totalComments,
+      totalShares,
+      postsCreated,
+      likesGiven,
+      commentsGiven,
+      profileStrength: Math.round(profileStrength),
+      networkQuality: Math.round(networkQuality * 10) / 10,
+      socialActivity: Math.round(socialActivity * 10) / 10,
+      contentPerformance: Math.round(contentPerformance * 10) / 10,
+      // Analysis objects for insights
+      profileAnalysis: {
+        recommendations: profileViews === 0 ? ['Complete your LinkedIn profile', 'Add a professional photo', 'Write a compelling headline'] : []
+      },
+      networkAnalysis: {
+        analysis: { recentGrowth: recentConnections },
+        insights: [
+          `${totalConnections} total connections`,
+          `${recentConnections} new connections this month`,
+          totalConnections > 500 ? 'Strong professional network' : 'Growing your network'
+        ]
+      },
+      socialAnalysis: {
+        metrics: { likesGiven },
+        insights: [
+          `${likesGiven} likes given`,
+          `${commentsGiven} comments made`,
+          likesGiven > 50 ? 'Active community member' : 'Increase engagement with others'
+        ]
+      },
+      contentAnalysis: {
+        metrics: { totalPosts },
+        insights: [
+          `${totalPosts} posts published`,
+          `${avgEngagementPerPost} average engagement per post`,
+          totalPosts > 10 ? 'Consistent content creator' : 'Start publishing more content'
+        ]
       }
     };
 
-    loadMetrics();
-  }, [dmaToken]);
+    console.log('Dashboard - Processed metrics:', metrics);
+    setProcessedMetrics(metrics);
+  }, [profileData, connectionsData, postsData, changelogData, dmaToken, isLoading]);
 
   if (!dmaToken) {
     return (
@@ -262,7 +282,7 @@ export const Dashboard = () => {
     );
   }
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
         <LoadingSpinner size="lg" />
@@ -270,45 +290,21 @@ export const Dashboard = () => {
     );
   }
 
-  if (error) {
+  if (hasError) {
     return (
       <div className="text-center py-12">
-        {error.includes("Rate Limit") ? (
+        {hasError.message?.includes("Rate Limit") ? (
           <div className="max-w-md mx-auto">
             <div className="mb-6">
               <div className="w-16 h-16 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <svg
-                  className="w-8 h-8 text-orange-600"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z"
-                  />
-                </svg>
+                <AlertCircle size={32} className="text-orange-600" />
               </div>
               <h2 className="text-xl font-bold text-gray-900 mb-2">
                 LinkedIn API Rate Limit Exceeded
               </h2>
               <p className="text-gray-600 mb-4">
-                You've reached the daily limit for LinkedIn API calls. This is a
-                LinkedIn restriction, not an issue with your account.
+                You've reached the daily limit for LinkedIn API calls.
               </p>
-              <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-6">
-                <h3 className="font-semibold text-orange-800 mb-2">
-                  What this means:
-                </h3>
-                <ul className="text-sm text-orange-700 space-y-1">
-                  <li>• LinkedIn limits DMA API calls per day</li>
-                  <li>• Your data is still accessible</li>
-                  <li>• Limits reset at midnight Pacific Time</li>
-                  <li>• This is normal for active users</li>
-                </ul>
-              </div>
             </div>
             <div className="space-y-3">
               <Button
@@ -318,18 +314,11 @@ export const Dashboard = () => {
               >
                 Try Again
               </Button>
-              <Button
-                variant="primary"
-                onClick={() => (window.location.href = "/?module=dma-test")}
-                className="w-full"
-              >
-                Test API Status
-              </Button>
             </div>
           </div>
         ) : (
           <>
-            <p className="text-red-600 mb-4">Error loading metrics: {error}</p>
+            <p className="text-red-600 mb-4">Error loading metrics: {hasError.message}</p>
             <Button variant="outline" onClick={() => window.location.reload()}>
               Retry
             </Button>
@@ -339,30 +328,13 @@ export const Dashboard = () => {
     );
   }
 
-  if (!metrics) {
+  if (!processedMetrics) {
     return (
       <div className="text-center py-12">
         <p className="text-gray-600">No metrics available</p>
       </div>
     );
   }
-
-  const prepareEngagementTrends = (posts: any[]) => {
-    const trends = posts.slice(0, 10).map((post) => ({
-      date: new Date(post.date).toLocaleDateString(),
-      likes: post.engagement.likes,
-      comments: post.engagement.comments,
-      shares: post.engagement.shares,
-    }));
-    return trends.reverse();
-  };
-
-  const prepareContentMixData = (contentMix: Record<string, number>) => {
-    return Object.entries(contentMix).map(([type, count]) => ({
-      name: type,
-      value: count,
-    }));
-  };
 
   return (
     <motion.div
@@ -375,17 +347,17 @@ export const Dashboard = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <StatsCard
           title="Profile Strength"
-          value={`${metrics.profileStrength || 0}%`}
-          change={metrics.profileStrength >= 80 ? "Excellent" : "Good"}
+          value={`${processedMetrics.profileStrength}%`}
+          change={processedMetrics.profileStrength >= 80 ? "Excellent" : "Good"}
           icon={User}
           color="blue"
         />
 
         <StatsCard
           title="Network Quality"
-          value={`${metrics.networkQuality || 0}/10`}
+          value={`${processedMetrics.networkQuality}/10`}
           change={`${
-            metrics.networkAnalysis?.analysis?.recentGrowth || 0
+            processedMetrics.networkAnalysis?.analysis?.recentGrowth || 0
           } new this month`}
           icon={Users}
           color="green"
@@ -393,9 +365,9 @@ export const Dashboard = () => {
 
         <StatsCard
           title="Social Activity"
-          value={`${metrics.socialActivity || 0}/10`}
+          value={`${processedMetrics.socialActivity}/10`}
           change={`${
-            metrics.socialAnalysis?.metrics?.likesGiven || 0
+            processedMetrics.socialAnalysis?.metrics?.likesGiven || 0
           } interactions`}
           icon={Heart}
           color="purple"
@@ -403,9 +375,9 @@ export const Dashboard = () => {
 
         <StatsCard
           title="Content Performance"
-          value={`${metrics.contentPerformance || 0}/10`}
+          value={`${processedMetrics.contentPerformance}/10`}
           change={`${
-            metrics.contentAnalysis?.metrics?.totalPosts || 0
+            processedMetrics.contentAnalysis?.metrics?.totalPosts || 0
           } posts published`}
           icon={FileText}
           color="orange"
@@ -419,13 +391,13 @@ export const Dashboard = () => {
             Your Activity (Past 28 days)
           </h3>
           <div className="space-y-4">
-            <ActivityItem label="Posts Created" value={metrics.postsCreated} />
+            <ActivityItem label="Posts Created" value={processedMetrics.postsCreated} />
             <ActivityItem
               label="Comments Given"
-              value={metrics.commentsGiven}
+              value={processedMetrics.commentsGiven}
             />
-            <ActivityItem label="Likes Given" value={metrics.likesGiven} />
-            <ActivityItem label="Total Posts" value={metrics.totalPosts} />
+            <ActivityItem label="Likes Given" value={processedMetrics.likesGiven} />
+            <ActivityItem label="Total Posts" value={processedMetrics.totalPosts} />
           </div>
         </Card>
 
@@ -436,7 +408,7 @@ export const Dashboard = () => {
               <h4 className="text-lg font-semibold text-gray-800">
                 Profile Development
               </h4>
-              {metrics.profileAnalysis?.recommendations?.map(
+              {processedMetrics.profileAnalysis?.recommendations?.map(
                 (rec: string, index: number) => (
                   <div key={index} className="flex items-center space-x-3">
                     <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
@@ -452,7 +424,7 @@ export const Dashboard = () => {
               <h4 className="text-lg font-semibold text-gray-800">
                 Network Insights
               </h4>
-              {metrics.networkAnalysis?.insights?.map(
+              {processedMetrics.networkAnalysis?.insights?.map(
                 (insight: string, index: number) => (
                   <div key={index} className="flex items-center space-x-3">
                     <div className="w-2 h-2 bg-green-500 rounded-full"></div>
@@ -468,7 +440,7 @@ export const Dashboard = () => {
               <h4 className="text-lg font-semibold text-gray-800">
                 Content Strategy
               </h4>
-              {metrics.contentAnalysis?.insights?.map(
+              {processedMetrics.contentAnalysis?.insights?.map(
                 (insight: string, index: number) => (
                   <div key={index} className="flex items-center space-x-3">
                     <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
@@ -484,7 +456,7 @@ export const Dashboard = () => {
               <h4 className="text-lg font-semibold text-gray-800">
                 Social Engagement
               </h4>
-              {metrics.socialAnalysis?.insights?.map(
+              {processedMetrics.socialAnalysis?.insights?.map(
                 (insight: string, index: number) => (
                   <div key={index} className="flex items-center space-x-3">
                     <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
