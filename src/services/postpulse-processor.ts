@@ -189,7 +189,10 @@ export class PostPulseProcessor {
       return e.resourceName === "ugcPosts" && 
              e.method === "CREATE" &&
              e.owner === e.actor && // Only posts where the user is the actor (creator)
-             (!currentUserId || e.owner === currentUserId); // Ensure it's the current user's post
+             (!currentUserId || e.owner === currentUserId) && // Ensure it's the current user's post
+             // Only include posts where the author is a person, not a company
+             (e.activity?.author?.startsWith?.("urn:li:person:") || 
+              typeof e.activity?.author === "string" && e.activity.author.includes("person"));
     });
 
     console.log(`Found ${postEvents.length} user posts out of ${data.elements.length} total events`);
