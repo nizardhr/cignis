@@ -65,11 +65,18 @@ export const PostPulse = () => {
       thumbnail: post.thumbnail,
       media: post.media,
       mediaType: post.mediaType,
-      hasError: imageLoadErrors.has(post.id)
+      hasError: imageLoadErrors.has(post.id),
+      mediaStatus: post.media?.status
     });
     
     if (imageLoadErrors.has(post.id)) {
       console.log("Post has image load error, returning null");
+      return null;
+    }
+    
+    // Check if media is READY before attempting download
+    if (post.media?.status && post.media.status !== "READY") {
+      console.log("Media not READY, status:", post.media.status);
       return null;
     }
     

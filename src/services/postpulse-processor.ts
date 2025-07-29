@@ -258,15 +258,19 @@ export class PostPulseProcessor {
               mediaAssetId = assetMatch[1];
               console.log("Extracted media asset ID:", mediaAssetId);
               
-              // We'll generate the thumbnail URL using our media download function
-              thumbnail = `/.netlify/functions/linkedin-media-download?assetId=${mediaAssetId}`;
+              // Only set thumbnail if status is READY
+              if (firstMedia?.status === "READY") {
+                thumbnail = `/.netlify/functions/linkedin-media-download?assetId=${mediaAssetId}`;
+                console.log("Asset is READY, generated thumbnail URL:", thumbnail);
+              } else {
+                console.log("Asset not READY, status:", firstMedia?.status);
+              }
               media = { 
                 urn: mediaUrn, 
                 assetId: mediaAssetId,
                 status: firstMedia?.status || "READY"
               };
               mediaType = firstMedia?.mediaType || "IMAGE";
-              console.log("Generated thumbnail URL:", thumbnail);
             }
           }
           
