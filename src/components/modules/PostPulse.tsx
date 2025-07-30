@@ -151,7 +151,7 @@ export const PostPulse = () => {
         <div className="text-center">
           <LoadingSpinner size="lg" />
           <p className="mt-4 text-gray-600">Loading your LinkedIn posts...</p>
-          <p className="text-sm text-gray-500">Check console for detailed logs...</p>
+          <p className="text-sm text-gray-500">Fetching from changelog and historical data...</p>
         </div>
       </motion.div>
     );
@@ -192,13 +192,17 @@ export const PostPulse = () => {
         <div>
           <h2 className="text-2xl font-bold">PostPulse</h2>
           <p className="text-gray-600 mt-1">
-            Your LinkedIn posts from the last {timeFilter} • {pagination.totalPosts} posts found
+            Your LinkedIn posts from the last {timeFilter} • {pagination.totalPosts} posts found • Source: {metadata.dataSource}
           </p>
         </div>
         <div className="flex space-x-3">
           <Button variant="primary" disabled={selectedPosts.length === 0}>
             <Send size={16} className="mr-2" />
             Push to PostGen ({selectedPosts.length})
+          </Button>
+          <Button variant="outline" onClick={() => window.location.reload()}>
+            <RefreshCw size={16} className="mr-2" />
+            Refresh Data
           </Button>
         </div>
       </div>

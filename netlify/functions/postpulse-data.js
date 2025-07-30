@@ -134,26 +134,56 @@ async function fetchMemberChangelog(authorization, startTime) {
 
 async function fetchHistoricalPosts(authorization, daysBack) {
   try {
-    console.log("🔗 Fetching historical posts for", daysBack, "days back");
+    console.log("🔗 Fetching historical posts for", daysBack, "days back with pagination");
     
-    const response = await fetch(
-      `/.netlify/functions/linkedin-historical-posts?daysBack=${daysBack}&count=50`,
-      {
-        headers: {
-          Authorization: authorization,
+    // Fetch multiple pages to get more historical posts
+    let allHistoricalData = { elements: [] };
+    let hasMore = true;
+    let start = 0;
+    const count = 50; // Max per page
+    
+    while (hasMore && start < 200) { // Limit to 200 total to avoid infinite loops
+      console.log(`📥 Fetching historical page: start=${start}, count=${count}`);
+      
+      const response = await fetch(
+        `/.netlify/functions/linkedin-historical-posts?daysBack=${daysBack}&count=${count}&start=${start}`,
+        {
+          headers: {
+            Authorization: authorization,
+          }
         }
+      );
+
+      if (!response.ok) {
+        console.warn(`⚠️ Historical posts API returned ${response.status} for start=${start}`);
+        break;
       }
-    );
 
-    if (!response.ok) {
-      console.warn(`⚠️ Historical posts API returned ${response.status}`);
-      return { elements: [] };
+      const data = await response.json();
+      console.log(`📥 Fetched historical page ${start}: ${data.elements?.length || 0} elements`);
+      
+      if (data.elements && data.elements.length > 0) {
+        // Merge the snapshot data
+        if (data.elements[0]?.snapshotData) {
+          if (!allHistoricalData.elements[0]) {
+            allHistoricalData.elements[0] = {
+              snapshotDomain: data.elements[0].snapshotDomain,
+              snapshotData: []
+            };
+          }
+          allHistoricalData.elements[0].snapshotData.push(...data.elements[0].snapshotData);
+        }
+        
+        // Check if there's more data
+        hasMore = data.paging?.hasMore || false;
+        start += count;
+      } else {
+        hasMore = false;
+      }
     }
-
-    const data = await response.json();
-    console.log(`📥 Fetched historical posts: ${data.elements?.length || 0} elements`);
-    console.log("📊 Historical data summary:", data.elements?.[0]?.snapshotData?.length || 0, "shares");
-    return data;
+    
+    console.log(`📊 Total historical posts fetched: ${allHistoricalData.elements[0]?.snapshotData?.length || 0} shares`);
+    return allHistoricalData;
   } catch (error) {
     console.error("❌ Error fetching historical posts:", error);
     return { elements: [] };
@@ -293,20 +323,22 @@ function processHistoricalPosts(historicalData, authorization) {
       
       element.snapshotData.forEach((share, index) => {
         try {
-          console.log(`=== HISTORICAL SHARE ${index + 1} ===`);
-          console.log("Share data:", {
-            Date: share.Date,
-            Visibility: share.Visibility,
-            ShareCommentary: share.ShareCommentary?.substring(0, 50) + "...",
-            ShareLink: share.ShareLink,
-            MediaType: share.MediaType,
-            LikesCount: share.LikesCount,
-            CommentsCount: share.CommentsCount
-          });
+          if (index < 5) { // Only log first 5 for brevity
+            console.log(`=== HISTORICAL SHARE ${index + 1} ===`);
+            console.log("Share data:", {
+              Date: share.Date,
+              Visibility: share.Visibility,
+              ShareCommentary: share.ShareCommentary?.substring(0, 50) + "...",
+              ShareLink: share.ShareLink,
+              MediaType: share.MediaType,
+              LikesCount: share.LikesCount,
+              CommentsCount: share.CommentsCount
+            });
+          }
           
-          // Skip company posts but be more lenient
-          if (share.Visibility === "COMPANY" || share.Visibility === "ORGANIZATION") {
-            console.log("❌ EXCLUDED: Company/Organization post");
+          // Be more lenient with historical posts - only skip if explicitly company
+          if (share.Visibility === "COMPANY") {
+            if (index < 5) console.log("❌ EXCLUDED: Company post");
             return;
           }
 
@@ -324,7 +356,7 @@ function processHistoricalPosts(historicalData, authorization) {
 
           // Extract media information from historical posts
           const mediaInfo = extractHistoricalMediaInfo(share, authorization);
-          console.log("Historical media info for share", index, ":", mediaInfo);
+          if (index < 5) console.log("Historical media info for share", index, ":", mediaInfo);
 
           posts.push({
             id: postId,
@@ -344,7 +376,7 @@ function processHistoricalPosts(historicalData, authorization) {
             shares: parseInt(share.SharesCount) || 0,
           });
           
-          console.log("✅ INCLUDED: Historical post added");
+          if (index < 5) console.log("✅ INCLUDED: Historical post added");
         } catch (error) {
           console.error("Error processing historical share:", error, share);
         }
