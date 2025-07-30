@@ -26,7 +26,7 @@ export async function handler(event, context) {
   }
 
   try {
-    console.log(`Analytics Data: Starting analysis for ${timeRange} period with person post filtering`);
+    console.log(`Analytics Data: Starting Snapshot-based analysis for ${timeRange} period`);
     const startTime = Date.now();
 
     // Verify DMA consent
@@ -42,18 +42,14 @@ export async function handler(event, context) {
           error: "DMA not enabled",
           message: consentCheck.message,
           needsReconnect: true,
-          // Always return safe defaults to prevent crashes
+          // Return empty structure to prevent crashes
           postsEngagementsTrend: [],
           connectionsGrowth: [],
           postTypesBreakdown: [],
           topHashtags: [],
           engagementPerPost: [],
           messagesSentReceived: [],
-          audienceDistribution: {
-            industries: [],
-            positions: [],
-            locations: []
-          },
+          audienceDistribution: { industries: [], positions: [], locations: [] },
           scoreImpacts: {},
           timeRange,
           lastUpdated: new Date().toISOString()
@@ -63,79 +59,60 @@ export async function handler(event, context) {
 
     // Calculate time range
     const days = timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 90;
-    const startTimeMs = Date.now() - (days * 24 * 60 * 60 * 1000);
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - days);
 
-    // Fetch data
-    const [changelogData, connectionsSnapshot, postsSnapshot] = await Promise.all([
-      fetchMemberChangelog(authorization, startTimeMs),
+    // Fetch Snapshot data
+    const [postsSnapshot, connectionsSnapshot, profileSnapshot] = await Promise.all([
+      fetchMemberSnapshot(authorization, "MEMBER_SHARE_INFO"),
       fetchMemberSnapshot(authorization, "CONNECTIONS"),
-      fetchMemberSnapshot(authorization, "MEMBER_SHARE_INFO")
+      fetchMemberSnapshot(authorization, "PROFILE")
     ]);
 
-    const changelogEvents = changelogData?.elements || [];
-    console.log(`Analytics: Processing ${changelogEvents.length} events for ${timeRange}`);
+    const postsData = postsSnapshot?.elements?.[0]?.snapshotData || [];
+    console.log(`Analytics: Processing ${postsData.length} posts from MEMBER_SHARE_INFO`);
 
-    // Apply person post filtering (same as dashboard)
-    const allPosts = changelogEvents.filter(e => e.resourceName === "ugcPosts");
-    const personPosts = allPosts.filter(post => {
-      // Exclude DELETE method
-      if (post.method === "DELETE") return false;
-
-      // Check for deleted lifecycle state
-      const lifecycleState = post.processedActivity?.lifecycleState || post.activity?.lifecycleState;
-      if (lifecycleState === "DELETED" || lifecycleState === "REMOVED") return false;
-
-      // Require author to be a person
-      const author = post.processedActivity?.author || post.activity?.author || post.owner;
-      return author && typeof author === 'string' && author.startsWith('urn:li:person:');
+    // Filter posts by time range
+    const filteredPosts = postsData.filter(post => {
+      const postDate = new Date(post.Date || post.date);
+      return postDate >= cutoffDate;
     });
 
-    // Create set of person post URNs for engagement filtering
-    const personPostUrns = new Set(personPosts.map(p => p.activity?.id || p.resourceId));
+    console.log(`Analytics: ${filteredPosts.length} posts in ${timeRange} range`);
 
-    // Filter engagements to only those on person posts
-    const allLikes = changelogEvents.filter(e => e.resourceName === "socialActions/likes" && e.method === "CREATE");
-    const allComments = changelogEvents.filter(e => e.resourceName === "socialActions/comments" && e.method === "CREATE");
+    const hasRecentActivity = filteredPosts.length > 0;
 
-    const personPostLikes = allLikes.filter(like => personPostUrns.has(like.activity?.object));
-    const personPostComments = allComments.filter(comment => personPostUrns.has(comment.activity?.object));
-
-    console.log(`Analytics: Filtered to ${personPosts.length} person posts, ${personPostLikes.length} likes, ${personPostComments.length} comments`);
-
-    const hasRecentActivity = personPosts.length > 0;
-
-    // Calculate analytics with safe defaults
+    // Calculate analytics with real Snapshot data
     const analytics = {
-      postsEngagementsTrend: calculatePostsTrend(personPosts, personPostLikes, personPostComments, days, postsSnapshot) || [],
-      connectionsGrowth: calculateConnectionsTrend(connectionsSnapshot, days) || [],
-      postTypesBreakdown: calculatePostTypesDistribution(personPosts) || [],
-      topHashtags: calculateTopHashtags(personPosts) || [],
-      engagementPerPost: calculateEngagementPerPost(personPosts, personPostLikes, personPostComments, postsSnapshot) || [],
-      messagesSentReceived: calculateMessageActivity(changelogEvents, days) || [],
-      audienceDistribution: calculateAudienceDistribution(connectionsSnapshot) || {
-        industries: [],
-        positions: [],
-        locations: []
-      },
-      scoreImpacts: getScoreImpacts() || {},
-      timeRange: timeRange || "30d",
+      postsEngagementsTrend: calculatePostsTrendFromSnapshot(filteredPosts, days),
+      connectionsGrowth: calculateConnectionsTrendFromSnapshot(connectionsSnapshot, days),
+      postTypesBreakdown: calculatePostTypesFromSnapshot(filteredPosts),
+      topHashtags: calculateTopHashtagsFromSnapshot(filteredPosts),
+      engagementPerPost: calculateEngagementPerPostFromSnapshot(filteredPosts),
+      messagesSentReceived: [], // Not available in Snapshot
+      audienceDistribution: calculateAudienceDistributionFromSnapshot(connectionsSnapshot),
+      scoreImpacts: getScoreImpactsFromSnapshot(),
+      timeRange: timeRange,
       lastUpdated: new Date().toISOString(),
       metadata: {
         hasRecentActivity,
-        dataSource: hasRecentActivity ? "changelog" : "snapshot",
-        eventCount: changelogEvents.length,
-        personPostsCount: personPosts.length,
-        totalPostsCount: allPosts.length,
-        historicalPostsCount: postsSnapshot?.elements?.[0]?.snapshotData?.length || 0,
+        dataSource: "snapshot",
+        postsCount: filteredPosts.length,
+        totalPostsCount: postsData.length,
         fetchTimeMs: Date.now() - startTime,
         description: hasRecentActivity 
-          ? `Showing ${personPosts.length} person posts with ${personPostLikes.length + personPostComments.length} engagements`
-          : `No recent activity (${days}d). Showing ${postsSnapshot?.elements?.[0]?.snapshotData?.length || 0} historical posts from MEMBER_SHARE_INFO.`
+          ? `Showing ${filteredPosts.length} posts from MEMBER_SHARE_INFO snapshot`
+          : `No posts in ${timeRange} range. Total posts available: ${postsData.length}`
       }
     };
 
+    // Generate AI narrative analysis
+    if (hasRecentActivity) {
+      analytics.aiNarrative = await generateAINarrative(analytics, authorization);
+    }
+
     if (!hasRecentActivity) {
-      analytics.note = `No recent activity (${days}d). Showing snapshot baselines where applicable.`;
+      analytics.note = `No posts found in ${timeRange} range. Try selecting a longer time period.`;
     }
 
     return {
@@ -150,7 +127,6 @@ export async function handler(event, context) {
   } catch (error) {
     console.error("Analytics Data Error:", error);
     
-    // Return safe defaults even on error to prevent crashes
     return {
       statusCode: 200,
       headers: {
@@ -168,18 +144,14 @@ export async function handler(event, context) {
         topHashtags: [],
         engagementPerPost: [],
         messagesSentReceived: [],
-        audienceDistribution: {
-          industries: [],
-          positions: [],
-          locations: []
-        },
+        audienceDistribution: { industries: [], positions: [], locations: [] },
         scoreImpacts: {},
         timeRange: "30d",
         lastUpdated: new Date().toISOString(),
         metadata: {
           hasRecentActivity: false,
           dataSource: "error",
-          eventCount: 0,
+          postsCount: 0,
           description: "Error loading data"
         }
       }),
@@ -197,56 +169,19 @@ async function verifyDMAConsent(authorization) {
     });
 
     if (!response.ok) {
-      return {
-        isActive: false,
-        message: "Unable to verify DMA consent status"
-      };
+      return { isActive: false, message: "Unable to verify DMA consent status" };
     }
 
     const data = await response.json();
     const hasConsent = data.elements && data.elements.length > 0;
 
-    if (!hasConsent) {
-      return {
-        isActive: false,
-        message: "DMA consent not active. Please reconnect your LinkedIn account with data access permissions."
-      };
-    }
-
-    return { isActive: true, message: "DMA consent active" };
+    return {
+      isActive: hasConsent,
+      message: hasConsent ? "DMA consent active" : "DMA consent not active"
+    };
   } catch (error) {
     console.error("Error verifying DMA consent:", error);
-    return {
-      isActive: false,
-      message: "Error checking DMA consent status"
-    };
-  }
-}
-
-async function fetchMemberChangelog(authorization, startTime) {
-  try {
-    // Clamp count to valid range [1..50] per DMA requirements
-    const count = 50;
-    const url = `https://api.linkedin.com/rest/memberChangeLogs?q=memberAndApplication&count=${count}&startTime=${startTime}`;
-    
-    const response = await fetch(url, {
-      headers: {
-        Authorization: authorization,
-        "LinkedIn-Version": "202312" // Required for versioned REST API
-      }
-    });
-
-    if (!response.ok) {
-      console.warn(`Changelog API returned ${response.status}`);
-      return { elements: [] };
-    }
-
-    const data = await response.json();
-    console.log(`Fetched ${data.elements?.length || 0} changelog events`);
-    return data;
-  } catch (error) {
-    console.error("Error fetching changelog:", error);
-    return { elements: [] };
+    return { isActive: false, message: "Error checking DMA consent status" };
   }
 }
 
@@ -274,7 +209,7 @@ async function fetchMemberSnapshot(authorization, domain) {
   }
 }
 
-function calculatePostsTrend(personPosts, personPostLikes, personPostComments, days) {
+function calculatePostsTrendFromSnapshot(posts, days) {
   const dateRange = [];
   for (let i = days - 1; i >= 0; i--) {
     const date = new Date();
@@ -284,105 +219,76 @@ function calculatePostsTrend(personPosts, personPostLikes, personPostComments, d
       posts: 0,
       likes: 0,
       comments: 0,
-      totalEngagement: 0,
-      description: "" // Safe default
+      totalEngagement: 0
     });
   }
 
-  // Process person posts only
-  personPosts.forEach(post => {
-    const eventTime = post.capturedAt || post.processedAt; // Prefer capturedAt per PDF
-    const eventDate = new Date(eventTime);
-    const dateStr = eventDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  posts.forEach(post => {
+    const postDate = new Date(post.Date || post.date);
+    const dateStr = postDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
     const dayData = dateRange.find(day => day.date === dateStr);
 
-    if (dayData && (post.method === "CREATE" || post.method === "UPDATE")) {
+    if (dayData) {
       dayData.posts++;
+      dayData.likes += parseInt(post.LikesCount || "0");
+      dayData.comments += parseInt(post.CommentsCount || "0");
+      dayData.totalEngagement = dayData.likes + dayData.comments;
     }
   });
 
-  // Process likes on person posts only
-  personPostLikes.forEach(like => {
-    const eventTime = like.capturedAt || like.processedAt;
-    const eventDate = new Date(eventTime);
-    const dateStr = eventDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const dayData = dateRange.find(day => day.date === dateStr);
-
-    if (dayData) {
-      dayData.likes++;
-    }
-  });
-
-  // Process comments on person posts only
-  personPostComments.forEach(comment => {
-    const eventTime = comment.capturedAt || comment.processedAt;
-    const eventDate = new Date(eventTime);
-    const dateStr = eventDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const dayData = dateRange.find(day => day.date === dateStr);
-
-    if (dayData) {
-      dayData.comments++;
-    }
-  });
-
-  return dateRange.map(day => ({
-    ...day,
-    totalEngagement: day.likes + day.comments,
-    description: `${day.date} — Posts: ${day.posts}, Likes: ${day.likes}, Comments: ${day.comments}`
-  }));
+  return dateRange;
 }
 
-function calculateConnectionsTrend(connectionsSnapshot, days) {
+function calculateConnectionsTrendFromSnapshot(connectionsSnapshot, days) {
   if (!connectionsSnapshot?.elements?.[0]?.snapshotData) {
     return Array.from({ length: days }, (_, i) => ({
       date: new Date(Date.now() - (days - 1 - i) * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
       totalConnections: 0,
-      newConnections: 0,
-      description: ""
+      newConnections: 0
     }));
   }
 
   const connections = connectionsSnapshot.elements[0].snapshotData;
   const totalConnections = connections.length;
 
-  // For simplicity, show steady growth over the period
+  // Generate trend based on connection dates
   return Array.from({ length: days }, (_, i) => {
     const date = new Date(Date.now() - (days - 1 - i) * 24 * 60 * 60 * 1000);
     const dateStr = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const dailyConnections = Math.max(0, totalConnections - Math.floor(Math.random() * 10));
-    const newConnections = Math.floor(Math.random() * 3);
+    
+    // Count connections made on this day
+    const dayConnections = connections.filter(conn => {
+      const connDate = new Date(conn["Connected On"] || conn.connectedOn || conn.Date);
+      return connDate.toDateString() === date.toDateString();
+    }).length;
     
     return {
       date: dateStr,
-      totalConnections: dailyConnections,
-      newConnections,
-      description: `${dateStr} — Total: ${dailyConnections}, New: ${newConnections}`
+      totalConnections: totalConnections,
+      newConnections: dayConnections
     };
   });
 }
 
-function calculatePostTypesDistribution(personPosts) {
+function calculatePostTypesFromSnapshot(posts) {
   const types = {};
 
-  personPosts.forEach(post => {
-    const content = post.activity?.specificContent?.["com.linkedin.ugc.ShareContent"];
-    const mediaCategory = content?.shareMediaCategory || "NONE";
-    types[mediaCategory] = (types[mediaCategory] || 0) + 1;
+  posts.forEach(post => {
+    const mediaType = post.MediaType || post.mediaType || "TEXT";
+    types[mediaType] = (types[mediaType] || 0) + 1;
   });
 
   return Object.entries(types).map(([name, value]) => ({ 
-    name: name || "NONE", 
-    value: value || 0,
-    description: `${name}: ${value} posts`
+    name: name || "TEXT", 
+    value: value || 0
   }));
 }
 
-function calculateTopHashtags(personPosts) {
+function calculateTopHashtagsFromSnapshot(posts) {
   const hashtagCounts = {};
 
-  personPosts.forEach(post => {
-    const content = post.activity?.specificContent?.["com.linkedin.ugc.ShareContent"];
-    const text = content?.shareCommentary?.text || "";
+  posts.forEach(post => {
+    const text = post.ShareCommentary || post.shareCommentary || "";
     const hashtags = text.match(/#[\w]+/g) || [];
     
     hashtags.forEach(hashtag => {
@@ -395,97 +301,28 @@ function calculateTopHashtags(personPosts) {
     .slice(0, 10)
     .map(([hashtag, count]) => ({ 
       hashtag: hashtag || "", 
-      count: count || 0,
-      description: `${hashtag} used ${count} times`
+      count: count || 0
     }));
 }
 
-function calculateEngagementPerPost(personPosts, personPostLikes, personPostComments) {
-  const engagementMap = {};
-
-  // Initialize person posts
-  personPosts.forEach(post => {
-    const postId = post.activity?.id || post.resourceId;
-    engagementMap[postId] = {
-      postId,
-      content: post.activity?.specificContent?.["com.linkedin.ugc.ShareContent"]?.shareCommentary?.text?.substring(0, 50) + "..." || "Post content",
-      likes: 0,
-      comments: 0,
-      shares: 0,
-      createdAt: post.capturedAt || post.processedAt,
-      description: ""
-    };
-  });
-
-  // Count likes on person posts
-  personPostLikes.forEach(like => {
-    const postId = like.activity?.object;
-    if (postId && engagementMap[postId]) {
-      engagementMap[postId].likes++;
-    }
-  });
-
-  // Count comments on person posts
-  personPostComments.forEach(comment => {
-    const postId = comment.activity?.object;
-    if (postId && engagementMap[postId]) {
-      engagementMap[postId].comments++;
-    }
-  });
-
-  return Object.values(engagementMap)
+function calculateEngagementPerPostFromSnapshot(posts) {
+  return posts
     .map(post => ({
-      ...post,
-      totalEngagement: post.likes + post.comments + post.shares,
-      description: `${post.content} — Likes: ${post.likes}, Comments: ${post.comments}`
+      postId: post.ShareLink || `post_${Date.now()}`,
+      content: (post.ShareCommentary || "Post content").substring(0, 50) + "...",
+      likes: parseInt(post.LikesCount || "0"),
+      comments: parseInt(post.CommentsCount || "0"),
+      shares: parseInt(post.SharesCount || "0"),
+      totalEngagement: parseInt(post.LikesCount || "0") + parseInt(post.CommentsCount || "0") + parseInt(post.SharesCount || "0"),
+      createdAt: new Date(post.Date || post.date).getTime()
     }))
     .sort((a, b) => b.totalEngagement - a.totalEngagement)
     .slice(0, 10);
 }
 
-function calculateMessageActivity(events, days) {
-  const messages = events.filter(e => e.resourceName === "messages");
-  const dateRange = [];
-
-  for (let i = days - 1; i >= 0; i--) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
-    dateRange.push({
-      date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      sent: 0,
-      received: 0,
-      description: ""
-    });
-  }
-
-  messages.forEach(message => {
-    const eventTime = message.capturedAt || message.processedAt;
-    const messageDate = new Date(eventTime);
-    const dateStr = messageDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const dayData = dateRange.find(day => day.date === dateStr);
-
-    if (dayData) {
-      if (message.actor === message.owner) {
-        dayData.sent++;
-      } else {
-        dayData.received++;
-      }
-    }
-  });
-
-  return dateRange.map(day => ({
-    ...day,
-    description: `${day.date} — Sent: ${day.sent}, Received: ${day.received}`
-  }));
-}
-
-function calculateAudienceDistribution(connectionsSnapshot) {
+function calculateAudienceDistributionFromSnapshot(connectionsSnapshot) {
   if (!connectionsSnapshot?.elements?.[0]?.snapshotData) {
-    return {
-      industries: [],
-      positions: [],
-      locations: []
-    };
+    return { industries: [], positions: [], locations: [] };
   }
 
   const connections = connectionsSnapshot.elements[0].snapshotData;
@@ -494,12 +331,10 @@ function calculateAudienceDistribution(connectionsSnapshot) {
   const locations = {};
 
   connections.forEach(conn => {
-    // Filter out null/empty values and use non-null industry data
     const industry = conn.Industry || conn.industry;
     const position = conn.Position || conn.position;
     const location = conn.Location || conn.location;
 
-    // Only count non-null, non-empty values
     if (industry && industry.trim() && industry !== "Unknown") {
       industries[industry] = (industries[industry] || 0) + 1;
     }
@@ -515,31 +350,19 @@ function calculateAudienceDistribution(connectionsSnapshot) {
     industries: Object.entries(industries)
       .sort(([, a], [, b]) => b - a)
       .slice(0, 10)
-      .map(([name, value]) => ({ 
-        name: name || "Unknown", 
-        value: value || 0,
-        description: `${name}: ${value} connections`
-      })),
+      .map(([name, value]) => ({ name: name || "Unknown", value: value || 0 })),
     positions: Object.entries(positions)
       .sort(([, a], [, b]) => b - a)
       .slice(0, 10)
-      .map(([name, value]) => ({ 
-        name: name || "Unknown", 
-        value: value || 0,
-        description: `${name}: ${value} connections`
-      })),
+      .map(([name, value]) => ({ name: name || "Unknown", value: value || 0 })),
     locations: Object.entries(locations)
       .sort(([, a], [, b]) => b - a)
       .slice(0, 10)
-      .map(([name, value]) => ({ 
-        name: name || "Unknown", 
-        value: value || 0,
-        description: `${name}: ${value} connections`
-      }))
+      .map(([name, value]) => ({ name: name || "Unknown", value: value || 0 }))
   };
 }
 
-function getScoreImpacts() {
+function getScoreImpactsFromSnapshot() {
   return {
     profileCompleteness: {
       description: "A complete profile increases visibility and credibility",
@@ -556,15 +379,68 @@ function getScoreImpacts() {
       impact: "Influences audience relevance and mutual interactions",
       tips: ["Ask questions in posts", "Share personal experiences", "Respond to comments quickly"]
     },
-    networkGrowth: {
-      description: "Growing your network expands your reach and opportunities",
-      impact: "Affects audience relevance and mutual interactions",
-      tips: ["Connect with industry peers", "Engage with others' content", "Share valuable insights"]
-    },
     contentDiversity: {
       description: "Varied content types keep your audience engaged",
       impact: "Affects engagement quality and professional brand",
       tips: ["Mix text, images, and videos", "Share articles and insights", "Use polls and questions"]
     }
   };
+}
+
+async function generateAINarrative(analytics, authorization) {
+  const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+  
+  if (!OPENAI_API_KEY) {
+    console.warn("OpenAI API key not configured, skipping AI narrative");
+    return "Analytics data processed successfully. Consider the trends and metrics above to optimize your LinkedIn strategy.";
+  }
+
+  try {
+    const summaryData = {
+      postsCount: analytics.metadata.postsCount,
+      topHashtags: analytics.topHashtags.slice(0, 3),
+      postTypes: analytics.postTypesBreakdown,
+      topEngagementPost: analytics.engagementPerPost[0],
+      timeRange: analytics.timeRange
+    };
+
+    const systemPrompt = `You are a LinkedIn analytics expert. Analyze the provided metrics and write a concise summary with 2-3 specific recommendations. Keep it under 300 words and focus on actionable insights.`;
+
+    const userPrompt = `Analyze these LinkedIn metrics and trends:
+
+Posts in ${analytics.timeRange}: ${summaryData.postsCount}
+Top hashtags: ${summaryData.topHashtags.map(h => h.hashtag).join(', ')}
+Content types: ${summaryData.postTypes.map(t => `${t.name}: ${t.value}`).join(', ')}
+Best performing post: ${summaryData.topEngagementPost?.totalEngagement || 0} total engagement
+
+Write a summary and provide 2-3 specific recommendations for improving LinkedIn performance.`;
+
+    const response = await fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt }
+        ],
+        max_tokens: 400,
+        temperature: 0.4
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`OpenAI API error: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data.choices[0]?.message?.content || "Analytics processed successfully. Focus on consistent posting and engaging content.";
+
+  } catch (error) {
+    console.error('Error generating AI narrative:', error);
+    return "Your LinkedIn analytics show good activity. Continue posting consistently and engaging with your network for optimal growth.";
+  }
 }

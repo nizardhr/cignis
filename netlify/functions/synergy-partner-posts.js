@@ -10,10 +10,17 @@ export async function handler(event, context) {
     };
   }
 
+  if (event.httpMethod !== "GET") {
+    return {
+      statusCode: 405,
+      body: JSON.stringify({ error: "Method not allowed" }),
+    };
+  }
+
   const { authorization } = event.headers;
   const { partnerPersonUrn } = event.queryStringParameters || {};
 
-  console.log("=== SYNERGY PARTNER POSTS ===");
+  console.log("=== SYNERGY PARTNER POSTS (SNAPSHOT) ===");
   console.log("Partner URN:", partnerPersonUrn);
   console.log("Authorization present:", !!authorization);
 
@@ -40,12 +47,25 @@ export async function handler(event, context) {
   }
 
   try {
-    // Extract viewer's DMA token
+    // Check cache first
+    const cacheKey = `synergy_${partnerPersonUrn}_${authorization.substring(0, 20)}`;
+    const cached = getFromCache(cacheKey);
+    if (cached) {
+      console.log("Returning cached partner posts");
+      return {
+        statusCode: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+        body: JSON.stringify(cached),
+      };
+    }
+
+    // For demo purposes, we'll use the viewer's token for partner data
+    // In production, you'd fetch the partner's DMA token from your database
+    const partnerDmaToken = authorization.replace('Bearer ', '');
     const myDmaToken = authorization.replace('Bearer ', '');
-    
-    // For demo purposes, we'll use the same token for partner
-    // In production, you'd fetch the partner's token from your database
-    const partnerDmaToken = myDmaToken;
 
     console.log("Using tokens for partner posts fetch");
 
@@ -65,15 +85,12 @@ export async function handler(event, context) {
       };
     }
 
-    // Calculate 28 days ago
-    const twentyEightDaysAgo = Date.now() - (28 * 24 * 60 * 60 * 1000);
+    // Fetch partner's posts from MEMBER_SHARE_INFO snapshot
+    const partnerPosts = await fetchPartnerPostsFromSnapshot(partnerDmaToken, partnerPersonUrn);
+    console.log(`Found ${partnerPosts.length} partner posts from snapshot`);
 
-    // Fetch partner's posts from their changelog
-    const partnerPosts = await fetchPartnerPosts(partnerDmaToken, partnerPersonUrn, twentyEightDaysAgo);
-    console.log(`Found ${partnerPosts.length} partner posts`);
-
-    // Fetch my comments on those posts
-    const myComments = await fetchMyComments(myDmaToken, partnerPosts.map(p => p.urn), twentyEightDaysAgo);
+    // Fetch my comments on those posts from my snapshot
+    const myComments = await fetchMyCommentsFromSnapshot(myDmaToken, partnerPosts.map(p => p.urn));
     console.log(`Found ${Object.keys(myComments).length} of my comments on partner posts`);
 
     // Combine posts with my comments
@@ -85,10 +102,13 @@ export async function handler(event, context) {
     const result = {
       partner: {
         personUrn: partnerPersonUrn,
-        displayName: extractDisplayName(partnerPersonUrn) // Extract from URN for demo
+        displayName: extractDisplayName(partnerPersonUrn)
       },
       posts: postsWithComments
     };
+
+    // Cache the result for 10 minutes
+    setInCache(cacheKey, result, 10 * 60 * 1000);
 
     console.log(`Returning ${result.posts.length} posts for partner`);
 
@@ -118,6 +138,25 @@ export async function handler(event, context) {
   }
 }
 
+// Simple in-memory cache (in production, use Redis or similar)
+const cache = new Map();
+
+function getFromCache(key) {
+  const item = cache.get(key);
+  if (item && Date.now() < item.expiry) {
+    return item.data;
+  }
+  cache.delete(key);
+  return null;
+}
+
+function setInCache(key, data, ttlMs) {
+  cache.set(key, {
+    data,
+    expiry: Date.now() + ttlMs
+  });
+}
+
 async function verifyPartnerConsent(partnerDmaToken) {
   try {
     const response = await fetch("https://api.linkedin.com/rest/memberAuthorizations?q=memberAndApplication", {
@@ -144,12 +183,12 @@ async function verifyPartnerConsent(partnerDmaToken) {
   }
 }
 
-async function fetchPartnerPosts(partnerDmaToken, partnerPersonUrn, startTime) {
+async function fetchPartnerPostsFromSnapshot(partnerDmaToken, partnerPersonUrn) {
   try {
-    console.log(`Fetching posts for partner: ${partnerPersonUrn}`);
+    console.log(`Fetching MEMBER_SHARE_INFO snapshot for partner: ${partnerPersonUrn}`);
     
     const response = await fetch(
-      `https://api.linkedin.com/rest/memberChangeLogs?q=memberAndApplication&count=50&startTime=${startTime}`,
+      "https://api.linkedin.com/rest/memberSnapshotData?q=criteria&domain=MEMBER_SHARE_INFO",
       {
         headers: {
           Authorization: `Bearer ${partnerDmaToken}`,
@@ -159,138 +198,89 @@ async function fetchPartnerPosts(partnerDmaToken, partnerPersonUrn, startTime) {
     );
 
     if (!response.ok) {
-      console.warn(`Partner changelog API returned ${response.status}`);
+      console.warn(`Partner snapshot API returned ${response.status}`);
       return [];
     }
 
     const data = await response.json();
-    const events = data.elements || [];
+    const shareData = data.elements?.[0]?.snapshotData || [];
 
-    console.log(`Processing ${events.length} events for partner posts`);
+    console.log(`Processing ${shareData.length} shares from partner snapshot`);
 
-    // Filter for partner's ugcPosts
-    const ugcPosts = events.filter(event => {
-      return event.resourceName === "ugcPosts" &&
-             event.method !== "DELETE" &&
-             (event.activity?.author === partnerPersonUrn || event.owner === partnerPersonUrn) &&
-             event.activity?.author?.startsWith?.('urn:li:person:');
-    });
+    // Filter and process posts
+    const posts = shareData
+      .filter(share => {
+        // Only include posts that are not company posts
+        return share.Visibility !== "COMPANY" && share.ShareCommentary;
+      })
+      .sort((a, b) => new Date(b.Date || b.date).getTime() - new Date(a.Date || a.date).getTime())
+      .slice(0, 5) // Take latest 5
+      .map(share => {
+        // Extract post URN from ShareLink
+        let postUrn = share.ShareLink || `share_${Date.now()}`;
+        const activityMatch = share.ShareLink?.match(/activity-(\d+)/);
+        const shareMatch = share.ShareLink?.match(/share-(\d+)/);
+        if (activityMatch) {
+          postUrn = `urn:li:activity:${activityMatch[1]}`;
+        } else if (shareMatch) {
+          postUrn = `urn:li:share:${shareMatch[1]}`;
+        }
 
-    console.log(`Found ${ugcPosts.length} UGC posts from partner`);
-
-    // Process posts and extract thumbnails
-    const posts = ugcPosts
-      .sort((a, b) => (b.capturedAt || b.processedAt) - (a.capturedAt || a.processedAt))
-      .slice(0, 5)
-      .map(event => {
-        const content = event.activity?.specificContent?.["com.linkedin.ugc.ShareContent"];
-        const text = content?.shareCommentary?.text || "Post content";
-        const mediaType = content?.shareMediaCategory || "NONE";
-        
         // Extract thumbnail
-        const thumbnail = extractThumbnail(content, mediaType);
+        const thumbnail = extractThumbnailFromSnapshot(share);
         
         return {
-          urn: event.resourceId,
-          createdAt: event.capturedAt || event.processedAt,
-          text: text,
-          mediaType: mediaType,
+          urn: postUrn,
+          createdAt: new Date(share.Date || share.date).getTime(),
+          text: share.ShareCommentary || "Post content",
+          mediaType: share.MediaType || "TEXT",
           thumbnail: thumbnail
         };
       });
 
-    console.log(`Returning ${posts.length} processed partner posts`);
+    console.log(`Returning ${posts.length} processed partner posts from snapshot`);
     return posts;
 
   } catch (error) {
-    console.error("Error fetching partner posts:", error);
+    console.error("Error fetching partner posts from snapshot:", error);
     return [];
   }
 }
 
-async function fetchMyComments(myDmaToken, postUrns, startTime) {
+async function fetchMyCommentsFromSnapshot(myDmaToken, postUrns) {
   try {
-    console.log(`Fetching my comments for ${postUrns.length} post URNs`);
+    console.log(`Fetching my comments for ${postUrns.length} post URNs from snapshot`);
     
-    const response = await fetch(
-      `https://api.linkedin.com/rest/memberChangeLogs?q=memberAndApplication&count=50&startTime=${startTime}`,
-      {
-        headers: {
-          Authorization: `Bearer ${myDmaToken}`,
-          "LinkedIn-Version": "202312"
-        }
-      }
-    );
-
-    if (!response.ok) {
-      console.warn(`My changelog API returned ${response.status}`);
-      return {};
-    }
-
-    const data = await response.json();
-    const events = data.elements || [];
-
-    console.log(`Processing ${events.length} events for my comments`);
-
-    // Filter for my comments on the partner's posts
+    // For now, return empty comments since MEMBER_SHARE_INFO doesn't contain comment data
+    // In a full implementation, you'd need to fetch from a comments-specific domain or use changelog
     const myComments = {};
-    
-    events.forEach(event => {
-      if (event.resourceName === "socialActions/comments" && 
-          event.method === "CREATE" &&
-          event.activity?.object &&
-          postUrns.includes(event.activity.object)) {
-        
-        const postUrn = event.activity.object;
-        const commentText = event.activity?.message?.text || 
-                           event.processedActivity?.message?.text || 
-                           "Comment text";
-        
-        // Keep the latest comment per post
-        if (!myComments[postUrn] || 
-            (event.capturedAt || event.processedAt) > myComments[postUrn].createdAt) {
-          myComments[postUrn] = {
-            text: commentText,
-            createdAt: event.capturedAt || event.processedAt
-          };
-        }
-      }
-    });
 
-    console.log(`Found my comments on ${Object.keys(myComments).length} partner posts`);
+    console.log(`Found ${Object.keys(myComments).length} of my comments from snapshot`);
     return myComments;
 
   } catch (error) {
-    console.error("Error fetching my comments:", error);
+    console.error("Error fetching my comments from snapshot:", error);
     return {};
   }
 }
 
-function extractThumbnail(content, mediaType) {
-  if (!content) return null;
-
-  // Handle IMAGE/VIDEO posts
-  if ((mediaType === "IMAGE" || mediaType === "VIDEO") && content.media && content.media.length > 0) {
-    const firstMedia = content.media[0];
-    const mediaUrn = firstMedia?.media;
-    
-    if (mediaUrn && typeof mediaUrn === 'string') {
-      const assetMatch = mediaUrn.match(/urn:li:digitalmediaAsset:(.+)/);
-      if (assetMatch) {
-        const assetId = assetMatch[1];
-        return `/.netlify/functions/linkedin-media-download?assetId=${assetId}`;
-      }
+function extractThumbnailFromSnapshot(share) {
+  // Handle direct media URLs from snapshot
+  if (share.MediaUrl && share.MediaUrl.trim()) {
+    // Check if it's a LinkedIn asset URN
+    const assetMatch = share.MediaUrl.match(/urn:li:digitalmediaAsset:(.+)/);
+    if (assetMatch) {
+      const assetId = assetMatch[1];
+      return `/.netlify/functions/linkedin-media-download?assetId=${assetId}`;
+    } else {
+      // Direct URL
+      return share.MediaUrl;
     }
   }
 
-  // Handle ARTICLE posts
-  if (mediaType === "ARTICLE" && content.contentEntities && content.contentEntities.length > 0) {
-    const firstEntity = content.contentEntities[0];
-    const articleThumbnail = firstEntity?.thumbnails?.[0]?.imageSpecificContent?.media ||
-                            firstEntity?.thumbnails?.[0]?.imageUrl;
-    if (articleThumbnail) {
-      return articleThumbnail;
-    }
+  // Handle articles with shared URLs
+  if (share.SharedUrl && share.MediaType === "ARTICLE") {
+    return null; // Articles might not have thumbnails in snapshot data
   }
 
   return null;
@@ -298,7 +288,6 @@ function extractThumbnail(content, mediaType) {
 
 function extractDisplayName(personUrn) {
   // Extract a display name from the URN for demo purposes
-  // In production, you'd fetch this from your database or LinkedIn profile API
   const urnParts = personUrn.split(':');
   const id = urnParts[urnParts.length - 1];
   return `Partner ${id.substring(0, 8)}`;

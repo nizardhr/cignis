@@ -40,6 +40,7 @@ export const Analytics = () => {
   const topHashtags = analyticsData?.topHashtags ?? [];
   const engagementPerPost = analyticsData?.engagementPerPost ?? [];
   const messagesSentReceived = analyticsData?.messagesSentReceived ?? [];
+  const aiNarrative = analyticsData?.aiNarrative;
   const audienceDistribution = analyticsData?.audienceDistribution ?? {
     industries: [],
     positions: [],
@@ -156,6 +157,21 @@ export const Analytics = () => {
           </Button>
         </div>
       </div>
+
+      {/* AI Narrative Analysis */}
+      {aiNarrative && (
+        <Card variant="glass" className="p-6 bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200">
+          <h3 className="text-lg font-semibold mb-4 flex items-center">
+            <Zap className="mr-2 text-purple-500" size={20} />
+            AI Analytics Summary
+          </h3>
+          <div className="prose prose-sm max-w-none">
+            <div className="whitespace-pre-line text-gray-700 dark:text-gray-300">
+              {aiNarrative}
+            </div>
+          </div>
+        </Card>
+      )}
 
       {/* Show note for no recent activity */}
       {analyticsData?.note && (
@@ -285,22 +301,22 @@ export const Analytics = () => {
           {postsEngagementsTrend.length > 0 ? (
             <ResponsiveContainer width="100%" height={350}>
               <LineChart data={postsEngagementsTrend}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="date" tick={{ fontSize: 12 }} />
-              <YAxis />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: 'white', 
-                  border: '1px solid #e5e7eb', 
-                  borderRadius: '12px',
-                  boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
-                }} 
-              />
-              <Line type="monotone" dataKey="posts" stroke="#3B82F6" strokeWidth={3} name="Posts" dot={{ fill: '#3B82F6', strokeWidth: 2, r: 4 }} />
-              <Line type="monotone" dataKey="totalEngagement" stroke="#10B981" strokeWidth={3} name="Total Engagement" dot={{ fill: '#10B981', strokeWidth: 2, r: 4 }} />
-              <Line type="monotone" dataKey="likes" stroke="#EF4444" strokeWidth={2} name="Likes" strokeDasharray="5 5" />
-              <Line type="monotone" dataKey="comments" stroke="#8B5CF6" strokeWidth={2} name="Comments" strokeDasharray="5 5" />
-            </LineChart>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                <YAxis />
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: 'white', 
+                    border: '1px solid #e5e7eb', 
+                    borderRadius: '12px',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
+                  }} 
+                />
+                <Line type="monotone" dataKey="posts" stroke="#3B82F6" strokeWidth={3} name="Posts" dot={{ fill: '#3B82F6', strokeWidth: 2, r: 4 }} />
+                <Line type="monotone" dataKey="totalEngagement" stroke="#10B981" strokeWidth={3} name="Total Engagement" dot={{ fill: '#10B981', strokeWidth: 2, r: 4 }} />
+                <Line type="monotone" dataKey="likes" stroke="#EF4444" strokeWidth={2} name="Likes" strokeDasharray="5 5" />
+                <Line type="monotone" dataKey="comments" stroke="#8B5CF6" strokeWidth={2} name="Comments" strokeDasharray="5 5" />
+              </LineChart>
             </ResponsiveContainer>
           ) : (
             <div className="h-80 flex items-center justify-center text-gray-500 bg-gray-50 rounded-xl">

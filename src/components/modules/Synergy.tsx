@@ -85,9 +85,9 @@ export const Synergy = () => {
     }
   ];
 
-  // Fetch partner posts
+  // Fetch partner posts using Snapshot API
   const { data: partnerPostsData, isLoading: postsLoading, error: postsError } = useQuery({
-    queryKey: ['synergy-partner-posts', selectedPartner],
+    queryKey: ['synergy-partner-posts-snapshot', selectedPartner],
     queryFn: async (): Promise<PartnerPostsResponse> => {
       if (!selectedPartner) throw new Error('No partner selected');
       
@@ -244,7 +244,7 @@ export const Synergy = () => {
         <div>
           <h2 className="text-2xl font-bold">Synergy Partners</h2>
           <p className="text-gray-600 mt-1">
-            Collaborate and engage with your strategic LinkedIn partners
+            Collaborate and engage with your strategic LinkedIn partners using Snapshot data
           </p>
         </div>
         <Button 
@@ -337,7 +337,7 @@ export const Synergy = () => {
                       {partnerPostsData?.posts?.length || 0}
                     </div>
                     <div className="text-sm text-gray-500">
-                      Posts (28 days)
+                      Latest Posts
                     </div>
                   </div>
                 </div>
@@ -345,7 +345,7 @@ export const Synergy = () => {
 
               {/* Partner Posts */}
               <div className="space-y-4">
-                <h4 className="text-lg font-semibold">Latest Posts</h4>
+                <h4 className="text-lg font-semibold">Latest Posts (Snapshot Data)</h4>
                 
                 {postsLoading ? (
                   <div className="space-y-4">
@@ -389,7 +389,7 @@ export const Synergy = () => {
                             <div className="flex items-center space-x-2 text-sm text-gray-600">
                               <Clock size={14} />
                               <span>{formatDate(post.createdAt)}</span>
-                              {post.mediaType !== 'NONE' && (
+                              {post.mediaType !== 'TEXT' && (
                                 <>
                                   <span>•</span>
                                   <div className="flex items-center space-x-1">
@@ -526,7 +526,7 @@ export const Synergy = () => {
                     <FileText size={48} className="mx-auto text-gray-300 mb-4" />
                     <p className="text-gray-500 mb-2">No recent posts</p>
                     <p className="text-sm text-gray-400">
-                      This partner hasn't published posts in the last 28 days.
+                      This partner hasn't published posts in their MEMBER_SHARE_INFO snapshot.
                     </p>
                   </Card>
                 )}
@@ -540,7 +540,7 @@ export const Synergy = () => {
                   Select a Partner
                 </h3>
                 <p className="text-gray-500">
-                  Choose a synergy partner from the list to view their latest posts and engagement opportunities.
+                  Choose a synergy partner from the list to view their latest posts from Snapshot data.
                 </p>
               </div>
             </Card>
@@ -586,7 +586,7 @@ export const Synergy = () => {
                   <AlertCircle size={16} className="text-blue-600 mt-0.5" />
                   <div className="text-sm text-blue-800">
                     <p className="font-medium mb-1">DMA Requirement</p>
-                    <p>Both you and your partner must have completed LinkedIn DMA consent to share synergy data.</p>
+                    <p>Both you and your partner must have completed LinkedIn DMA consent to share synergy data via Snapshot API.</p>
                   </div>
                 </div>
               </div>

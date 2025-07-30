@@ -18,6 +18,7 @@ export const Dashboard = () => {
   const { data: dashboardData, isLoading, error, refetch } = useDashboardData();
   const [debugMode, setDebugMode] = useState(false);
   const [isRefetching, setIsRefetching] = useState(false);
+  const [showAIInsights, setShowAIInsights] = useState(false);
 
   // Handle DMA reconnect scenario
   const handleRefetch = async () => {
@@ -193,10 +194,20 @@ export const Dashboard = () => {
         <div>
           <h2 className="text-2xl font-bold">Dashboard</h2>
           <p className="text-gray-600 mt-1">
-            LinkedIn performance insights from the last 28 days • {dashboardData.metadata.personPostsCount} person posts analyzed
+            LinkedIn performance insights from Snapshot data • {dashboardData.metadata.postsCount} posts analyzed
           </p>
         </div>
         <div className="flex space-x-2">
+          {dashboardData?.aiInsights && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowAIInsights(!showAIInsights)}
+            >
+              <Zap size={14} className="mr-1" />
+              {showAIInsights ? "Hide" : "Show"} AI Insights
+            </Button>
+          )}
           <Button
             variant="ghost"
             size="sm"
@@ -216,6 +227,35 @@ export const Dashboard = () => {
           </Button>
         </div>
       </div>
+
+      {/* AI Insights Panel */}
+      {showAIInsights && dashboardData?.aiInsights && (
+        <Card variant="glass" className="p-6 bg-gradient-to-r from-purple-50 to-indigo-50 border-2 border-purple-200">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold flex items-center text-purple-900">
+              <Zap size={16} className="mr-2" />
+              AI Performance Insights
+            </h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowAIInsights(false)}
+            >
+              Hide
+            </Button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {Object.entries(dashboardData.aiInsights).map(([key, insight]) => (
+              <div key={key} className="bg-white p-4 rounded-lg border border-purple-200">
+                <h4 className="font-medium text-purple-900 capitalize mb-2">
+                  {key.replace(/([A-Z])/g, ' $1').trim()}
+                </h4>
+                <p className="text-sm text-purple-800">{insight}</p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Debug Panel */}
       {debugMode && dashboardData && (
