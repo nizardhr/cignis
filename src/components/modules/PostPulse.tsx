@@ -257,8 +257,8 @@ export const PostPulse = () => {
                 variant="primary"
                 onClick={() => window.open('https://linkedin.com', '_blank')}
               >
-                <ExternalLink size={16} className="mr-2" />
-                Post on LinkedIn
+              <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded-full text-xs">
+                {post.source === "member_share_info" ? "LinkedIn Archive" : post.source}
               </Button>
             </div>
           </div>
@@ -292,13 +292,9 @@ export const PostPulse = () => {
                     {/* Source Indicator */}
                     <div className="absolute top-4 left-4">
                       <div
-                        className={`px-2 py-1 rounded-full text-xs font-medium ${
-                          post.source === "historical"
-                            ? "bg-purple-100 text-purple-800"
-                            : "bg-green-100 text-green-800"
-                        }`}
+                        className="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
                       >
-                        {post.source === "historical" ? "Historical" : "Recent"}
+                        LinkedIn Archive
                       </div>
                     </div>
 
@@ -363,39 +359,6 @@ export const PostPulse = () => {
                       {post.daysSincePosted} days ago
                     </p>
 
-                    {/* Engagement Metrics */}
-                    <div className="flex items-center justify-between mb-4">
-                      <motion.div
-                        className="flex items-center space-x-1 text-red-500"
-                        whileHover={{ scale: 1.1 }}
-                      >
-                        <Heart size={16} />
-                        <span className="text-sm font-medium">
-                          {post.likes}
-                        </span>
-                      </motion.div>
-                      <motion.div
-                        className="flex items-center space-x-1 text-blue-500"
-                        whileHover={{ scale: 1.1 }}
-                      >
-                        <MessageCircle size={16} />
-                        <span className="text-sm font-medium">
-                          {post.comments}
-                        </span>
-                      </motion.div>
-                      <motion.div
-                        className="flex items-center space-x-1 text-green-500"
-                        whileHover={{ scale: 1.1 }}
-                      >
-                        <Share size={16} />
-                        <span className="text-sm font-medium">
-                          {post.shares}
-                        </span>
-                      </motion.div>
-                      <div className="text-xs text-gray-500">
-                        Total: {post.likes + post.comments + post.shares}
-                      </div>
-                    </div>
 
                     {/* Action Buttons */}
                     <div className="flex space-x-2">

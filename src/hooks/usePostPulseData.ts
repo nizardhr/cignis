@@ -15,9 +15,6 @@ export interface PostPulsePost {
   source: "changelog" | "historical";
   daysSincePosted: number;
   canRepost: boolean;
-  likes: number;
-  comments: number;
-  shares: number;
 }
 
 export interface PostPulseDataOptions {

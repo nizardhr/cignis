@@ -164,12 +164,10 @@ export async function handler(event, context) {
           thumbnail: mediaInfo.thumbnail,
           mediaType: mediaInfo.mediaType,
           mediaAssetId: mediaInfo.assetId,
-          source: "historical",
+          source: "member_share_info",
           daysSincePosted: daysSincePosted,
           canRepost: daysSincePosted >= 30,
-          likes: parseInt(share.LikesCount) || 0,
-          comments: parseInt(share.CommentsCount) || 0,
-          shares: parseInt(share.SharesCount) || 0,
+          // Remove engagement metrics as they don't exist in historical data
         };
 
         processedPosts.push(processedPost);
@@ -194,14 +192,15 @@ export async function handler(event, context) {
 
     console.log(`📄 PAGINATION: Showing ${paginatedPosts.length} posts (${startIndex + 1}-${Math.min(endIndex, processedPosts.length)} of ${processedPosts.length})`);
 
+    // Return ALL posts without pagination to show all 90 posts
     const result = {
-      posts: paginatedPosts,
+      posts: processedPosts, // Return all posts, not paginated
       pagination: {
-        currentPage: pageNum,
-        totalPages: Math.ceil(processedPosts.length / pageSizeNum),
+        currentPage: 1,
+        totalPages: 1,
         totalPosts: processedPosts.length,
-        hasNextPage: endIndex < processedPosts.length,
-        hasPrevPage: pageNum > 1,
+        hasNextPage: false,
+        hasPrevPage: false,
       },
       metadata: {
         fetchTimeMs: Date.now() - startTime,
