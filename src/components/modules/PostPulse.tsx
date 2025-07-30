@@ -320,6 +320,12 @@ export const PostPulse = () => {
                                 loading="lazy"
                                 onError={() => {
                                   console.log(`Thumbnail failed for post ${post.id}:`, post.thumbnail);
+                                  console.log("Error details - Post:", {
+                                    id: post.id,
+                                    thumbnail: post.thumbnail,
+                                    mediaType: post.mediaType,
+                                    source: post.source
+                                  });
                                   handleImageError(post.id);
                                 }}
                               />

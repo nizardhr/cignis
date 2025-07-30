@@ -166,6 +166,7 @@ function processChangelogPosts(changelogData, authorization) {
   
   console.log("=== PROCESSING CHANGELOG POSTS ===");
   console.log("Total elements:", elements.length);
+  console.log("Authorization header:", authorization ? "present" : "missing");
 
   // Get current user ID for filtering
   const currentUserId = elements.find(e => e.owner)?.owner;
@@ -176,11 +177,12 @@ function processChangelogPosts(changelogData, authorization) {
   console.log("🔍 Total ugcPosts events:", allUgcPosts.length);
   
   allUgcPosts.forEach((post, index) => {
-    console.log(`📝 UGC Post ${index + 1}:`, {
+    console.log(`📝 UGC Post ${index + 1}/${allUgcPosts.length}:`, {
       resourceId: post.resourceId,
       method: post.method,
       owner: post.owner,
       actor: post.actor,
+      ownerMatchesUser: post.owner === currentUserId,
       lifecycleState: post.processedActivity?.lifecycleState || post.activity?.lifecycleState,
       author: post.processedActivity?.author || post.activity?.author || post.owner
     });
@@ -194,9 +196,14 @@ function processChangelogPosts(changelogData, authorization) {
     console.log("Method:", event.method);
     console.log("Owner:", event.owner);
     console.log("Actor:", event.actor);
+    console.log("Current User ID:", currentUserId);
+    console.log("Owner matches current user:", event.owner === currentUserId);
     
     // Must be a ugcPost
-    if (event.resourceName !== "ugcPosts") return false;
+    if (event.resourceName !== "ugcPosts") {
+      console.log("❌ EXCLUDED: Not a ugcPost");
+      return false;
+    }
 
     // Exclude DELETE method
     if (event.method === "DELETE") {
@@ -212,27 +219,19 @@ function processChangelogPosts(changelogData, authorization) {
       return false;
     }
 
-    // Check if this is the user's own post
-    const isOwnPost = event.owner === currentUserId;
-    console.log("Is own post:", isOwnPost);
-    
-    if (!isOwnPost) {
-      console.log("❌ EXCLUDED: Not current user's post");
+    // SIMPLIFIED: Just check if this is the user's own post
+    if (event.owner !== currentUserId) {
+      console.log("❌ EXCLUDED: Not current user's post (owner mismatch)");
       return false;
     }
-
-    // Additional check: ensure the author is a person (not organization)
+    
+    // Optional: Check if author is a person (but don't be too strict)
     const author = event.processedActivity?.author || event.activity?.author || event.owner;
-    console.log("Author:", author);
-    
-    const isPersonAuthor = !author || (typeof author === 'string' && author.startsWith('urn:li:person:'));
-    console.log("Is person author:", isPersonAuthor);
-    
-    if (!isPersonAuthor) {
-      console.log("❌ EXCLUDED: Non-person author");
+    if (author && typeof author === 'string' && author.startsWith('urn:li:organization:')) {
+      console.log("❌ EXCLUDED: Organization author:", author);
       return false;
     }
-
+    
     console.log("✅ INCLUDED: Valid person post");
     return true;
   });
@@ -253,6 +252,7 @@ function processChangelogPosts(changelogData, authorization) {
 
       // Extract media information
       const mediaInfo = extractMediaInfo(processedContent, activityContent, authorization);
+      console.log("Media info for post", postId, ":", mediaInfo);
 
       posts.push({
         id: postId,
@@ -261,7 +261,7 @@ function processChangelogPosts(changelogData, authorization) {
         text: shareCommentary,
         url: `https://linkedin.com/feed/update/${postId}`,
         timestamp: timestamp,
-        thumbnail: mediaInfo.thumbnail,
+        thumbnail: mediaInfo.thumbnail ? `${mediaInfo.thumbnail}&token=${encodeURIComponent(authorization.replace('Bearer ', ''))}` : null,
         mediaType: mediaInfo.mediaType,
         mediaAssetId: mediaInfo.assetId,
         source: "changelog",
@@ -324,7 +324,7 @@ function processHistoricalPosts(historicalData, authorization) {
 
           // Extract media information from historical posts
           const mediaInfo = extractHistoricalMediaInfo(share, authorization);
-          console.log("Media info extracted:", mediaInfo);
+          console.log("Historical media info for share", index, ":", mediaInfo);
 
           posts.push({
             id: postId,
@@ -333,7 +333,7 @@ function processHistoricalPosts(historicalData, authorization) {
             text: share.ShareCommentary || "Historical post content",
             url: share.ShareLink || `https://linkedin.com/feed/update/${postId}`,
             timestamp: timestamp,
-            thumbnail: mediaInfo.thumbnail,
+            thumbnail: mediaInfo.thumbnail ? `${mediaInfo.thumbnail}&token=${encodeURIComponent(authorization.replace('Bearer ', ''))}` : null,
             mediaType: mediaInfo.mediaType,
             mediaAssetId: mediaInfo.assetId,
             source: "historical",
@@ -359,6 +359,7 @@ function processHistoricalPosts(historicalData, authorization) {
 function extractMediaInfo(processedContent, activityContent, authorization) {
   const shareContent = processedContent || activityContent;
   if (!shareContent) {
+    console.log("No share content found");
     return { thumbnail: null, mediaType: "TEXT", assetId: null };
   }
 
@@ -368,28 +369,35 @@ function extractMediaInfo(processedContent, activityContent, authorization) {
   console.log("Extracting media info:", {
     shareMediaCategory,
     mediaArrayLength: mediaArray.length,
-    firstMedia: mediaArray[0]
+    firstMedia: mediaArray[0],
+    hasContentEntities: !!shareContent.contentEntities
   });
 
   // Handle IMAGE and VIDEO posts
   if ((shareMediaCategory === "IMAGE" || shareMediaCategory === "VIDEO") && mediaArray.length > 0) {
     const firstMedia = mediaArray[0];
     const mediaUrn = firstMedia?.media;
+    console.log("Processing IMAGE/VIDEO media URN:", mediaUrn);
     
     if (mediaUrn && typeof mediaUrn === 'string') {
       // Extract asset ID from URN like "urn:li:digitalmediaAsset:C5606AQF245TuEXNVXA"
       const assetMatch = mediaUrn.match(/urn:li:digitalmediaAsset:(.+)/);
+      console.log("Asset match result:", assetMatch);
+      
       if (assetMatch) {
         const assetId = assetMatch[1];
         console.log("Extracted media asset ID:", assetId);
         
         // Only generate thumbnail if status is READY
         if (firstMedia?.status === "READY") {
+          console.log("Media status is READY, generating thumbnail URL");
           return {
             thumbnail: `/.netlify/functions/linkedin-media-download?assetId=${assetId}`,
             mediaType: shareMediaCategory,
             assetId: assetId
           };
+        } else {
+          console.log("Media status not READY:", firstMedia?.status);
         }
       }
     }
@@ -397,9 +405,14 @@ function extractMediaInfo(processedContent, activityContent, authorization) {
 
   // Handle ARTICLE posts
   if (shareMediaCategory === "ARTICLE") {
+    console.log("Processing ARTICLE post, checking contentEntities");
     const contentEntities = shareContent.contentEntities || [];
+    console.log("Content entities:", contentEntities.length);
+    
     if (contentEntities.length > 0) {
       const firstEntity = contentEntities[0];
+      console.log("First entity:", firstEntity);
+      
       const thumbnailUrl = firstEntity?.thumbnails?.[0]?.imageSpecificContent?.media ||
                           firstEntity?.thumbnails?.[0]?.imageUrl;
       
@@ -414,6 +427,7 @@ function extractMediaInfo(processedContent, activityContent, authorization) {
     }
   }
 
+  console.log("No media found, returning defaults");
   return { thumbnail: null, mediaType: shareMediaCategory || "TEXT", assetId: null };
 }
 
