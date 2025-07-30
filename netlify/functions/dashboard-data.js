@@ -55,7 +55,8 @@ export async function handler(event, context) {
     const [profileSnapshot, connectionsSnapshot, postsSnapshot] = await Promise.all([
       fetchMemberSnapshot(authorization, "PROFILE"),
       fetchMemberSnapshot(authorization, "CONNECTIONS"),
-      fetchMemberSnapshot(authorization, "MEMBER_SHARE_INFO")
+      fetchMemberSnapshot(authorization, "MEMBER_SHARE_INFO"),
+      fetchMemberSnapshot(authorization, "MEMBER_SHARE_INFO") // Get historical posts
     ]);
 
     const fetchTime = Date.now() - startTime;
@@ -178,7 +179,8 @@ export async function handler(event, context) {
       personPostLikes,
       personPostComments,
       invitations,
-      connectionsSnapshot
+      connectionsSnapshot,
+      postsSnapshot
     });
 
     // Calculate trends from person posts only
@@ -774,9 +776,20 @@ function calculateOverallScore(scores) {
   return Math.round((sum / validScores.length) * 10) / 10;
 }
 
-function calculateSummary({ personPosts, personPostLikes, personPostComments, invitations, connectionsSnapshot }) {
+function calculateSummary({ personPosts, personPostLikes, personPostComments, invitations, connectionsSnapshot, postsSnapshot }) {
   const totalConnections = connectionsSnapshot?.elements?.[0]?.snapshotData?.length || 0;
-  const posts30d = personPosts.length; // Only person posts
+  
+  // Include historical posts from MEMBER_SHARE_INFO if changelog is empty
+  let posts30d = personPosts.length;
+  if (posts30d === 0 && postsSnapshot?.elements?.[0]?.snapshotData) {
+    const historicalPosts = postsSnapshot.elements[0].snapshotData;
+    const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+    posts30d = historicalPosts.filter(post => {
+      const postDate = new Date(post.Date || post.date);
+      return postDate.getTime() >= thirtyDaysAgo;
+    }).length;
+  }
+  
   const totalEngagements = personPostLikes.length + personPostComments.length; // Only on person posts
   const engagementRatePct = posts30d > 0 ? Math.round((totalEngagements / posts30d) * 100) / 100 : 0;
   const newConnections28d = invitations.length;

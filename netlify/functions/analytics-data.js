@@ -66,9 +66,10 @@ export async function handler(event, context) {
     const startTimeMs = Date.now() - (days * 24 * 60 * 60 * 1000);
 
     // Fetch data
-    const [changelogData, connectionsSnapshot] = await Promise.all([
+    const [changelogData, connectionsSnapshot, postsSnapshot] = await Promise.all([
       fetchMemberChangelog(authorization, startTimeMs),
-      fetchMemberSnapshot(authorization, "CONNECTIONS")
+      fetchMemberSnapshot(authorization, "CONNECTIONS"),
+      fetchMemberSnapshot(authorization, "MEMBER_SHARE_INFO")
     ]);
 
     const changelogEvents = changelogData?.elements || [];
@@ -105,11 +106,11 @@ export async function handler(event, context) {
 
     // Calculate analytics with safe defaults
     const analytics = {
-      postsEngagementsTrend: calculatePostsTrend(personPosts, personPostLikes, personPostComments, days) || [],
+      postsEngagementsTrend: calculatePostsTrend(personPosts, personPostLikes, personPostComments, days, postsSnapshot) || [],
       connectionsGrowth: calculateConnectionsTrend(connectionsSnapshot, days) || [],
       postTypesBreakdown: calculatePostTypesDistribution(personPosts) || [],
       topHashtags: calculateTopHashtags(personPosts) || [],
-      engagementPerPost: calculateEngagementPerPost(personPosts, personPostLikes, personPostComments) || [],
+      engagementPerPost: calculateEngagementPerPost(personPosts, personPostLikes, personPostComments, postsSnapshot) || [],
       messagesSentReceived: calculateMessageActivity(changelogEvents, days) || [],
       audienceDistribution: calculateAudienceDistribution(connectionsSnapshot) || {
         industries: [],
@@ -125,10 +126,11 @@ export async function handler(event, context) {
         eventCount: changelogEvents.length,
         personPostsCount: personPosts.length,
         totalPostsCount: allPosts.length,
+        historicalPostsCount: postsSnapshot?.elements?.[0]?.snapshotData?.length || 0,
         fetchTimeMs: Date.now() - startTime,
         description: hasRecentActivity 
           ? `Showing ${personPosts.length} person posts with ${personPostLikes.length + personPostComments.length} engagements`
-          : `No recent activity (${days}d). Showing snapshot baselines where applicable.`
+          : `No recent activity (${days}d). Showing ${postsSnapshot?.elements?.[0]?.snapshotData?.length || 0} historical posts from MEMBER_SHARE_INFO.`
       }
     };
 

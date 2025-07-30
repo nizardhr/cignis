@@ -38,7 +38,7 @@ export interface CommentSuggestion {
 export const synergyService = {
   // Partner management
   async getPartners(token: string): Promise<SynergyPartner[]> {
-    const response = await fetch(`${API_BASE}/synergy-partners`, {
+    const response = await fetch(`${API_BASE}/synergy-partner-posts`, {
       headers: {
         Authorization: `Bearer ${token}`,
         "Content-Type": "application/json",
@@ -140,11 +140,16 @@ export const synergyService = {
   // AI comment suggestions
   async suggestComment(
     token: string,
-    fromUserId: string,
-    toUserId: string,
-    postUrn: string,
-    postPreview?: string,
-    tone: string = "supportive"
+    post: {
+      urn: string;
+      text: string;
+      mediaType: string;
+      partnerName?: string;
+    },
+    viewerProfile?: {
+      headline?: string;
+      topics?: string[];
+    }
   ): Promise<string[]> {
     const response = await fetch(`${API_BASE}/synergy-suggest-comment`, {
       method: "POST",
@@ -153,11 +158,8 @@ export const synergyService = {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        fromUserId,
-        toUserId,
-        postUrn,
-        postPreview,
-        tone,
+        post,
+        viewerProfile,
       }),
     });
 
@@ -167,7 +169,7 @@ export const synergyService = {
     }
 
     const data = await response.json();
-    return data.suggestions;
+    return [data.suggestion]; // Return as array for compatibility
   },
 };
 
