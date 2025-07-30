@@ -1,13 +1,13 @@
 import { motion } from 'framer-motion';
 import { Info, TrendingUp, TrendingDown, Minus, Award, Target } from 'lucide-react';
 import { Card } from '../ui/Card';
-import { ProfileScore } from '../../hooks/useDashboardData';
+import { ProfileScore, Methodology } from '../../hooks/useDashboardData';
 import { useAppStore } from '../../stores/appStore';
 
 interface ProfileEvaluationCardProps {
   scores: ProfileScore;
   overallScore: number;
-  explanations: Record<string, string>;
+  explanations: Methodology;
 }
 
 export const ProfileEvaluationCard = ({ 
@@ -18,21 +18,45 @@ export const ProfileEvaluationCard = ({
   const { setCurrentModule } = useAppStore();
 
   const getScoreColor = (score: number) => {
+    if (score === null) return 'text-gray-500 bg-gray-100 border-gray-200';
     if (score >= 8) return 'text-green-600 bg-green-100 border-green-200';
     if (score >= 5) return 'text-yellow-600 bg-yellow-100 border-yellow-200';
     return 'text-red-600 bg-red-100 border-red-200';
   };
 
   const getScoreIcon = (score: number) => {
+    if (score === null) return <Minus size={16} />;
     if (score >= 8) return <TrendingUp size={16} />;
     if (score >= 5) return <Minus size={16} />;
     return <TrendingDown size={16} />;
   };
 
   const getScoreLabel = (score: number) => {
+    if (score === null) return 'Not Available';
     if (score >= 8) return 'Excellent';
     if (score >= 5) return 'Good';
     return 'Needs Work';
+  };
+
+  const formatMethodologyTooltip = (methodology: any) => {
+    if (!methodology) return "No calculation data available";
+    
+    let tooltip = methodology.formula;
+    
+    if (methodology.inputs) {
+      tooltip += "\n\nInputs:";
+      Object.entries(methodology.inputs).forEach(([key, value]) => {
+        if (key !== 'note' && typeof value !== 'object') {
+          tooltip += `\n• ${key}: ${value}`;
+        }
+      });
+    }
+    
+    if (methodology.note) {
+      tooltip += `\n\nNote: ${methodology.note}`;
+    }
+    
+    return tooltip;
   };
 
   const scoreItems = [
@@ -112,7 +136,7 @@ export const ProfileEvaluationCard = ({
                 <div className="relative">
                   <Info size={16} className="text-gray-400 cursor-help" />
                   <div className="absolute bottom-full right-0 mb-2 w-80 p-4 bg-gray-900 text-white text-sm rounded-xl opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none shadow-xl">
-                    {explanations[item.key]}
+                    {formatMethodologyTooltip(explanations[item.key])}
                   </div>
                 </div>
               </div>

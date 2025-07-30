@@ -6,8 +6,11 @@ import { Button } from "../ui/Button";
 import { LoadingSpinner } from "../ui/LoadingSpinner";
 import { useAuthStore } from "../../stores/authStore";
 import { useDashboardData } from "../../hooks/useDashboardData";
-import { QuickStatsCard } from "./QuickStatsCard";
 import { useAppStore } from "../../stores/appStore";
+import { QuickStatsCard } from "./QuickStatsCard";
+import { ProfileEvaluationCard } from "./ProfileEvaluationCard";
+import { SummaryKPIsCard } from "./SummaryKPIsCard";
+import { MiniTrendsCard } from "./MiniTrendsCard";
 
 export const Dashboard = () => {
   const { dmaToken } = useAuthStore();
@@ -67,34 +70,6 @@ export const Dashboard = () => {
     );
   }
 
-  // Add test function to check data flow
-  const testDataFlow = async () => {
-    console.log("Testing data flow...");
-    console.log("DMA Token present:", !!dmaToken);
-    console.log("DMA Token value:", dmaToken ? dmaToken.substring(0, 20) + "..." : "null");
-    console.log("Dashboard data:", dashboardData);
-    console.log("Loading state:", isLoading);
-    console.log("Error state:", error);
-    
-    // Test direct API call
-    if (dmaToken) {
-      try {
-        console.log("Testing direct API call...");
-        const response = await fetch('/api/dashboard-data', {
-          headers: {
-            'Authorization': `Bearer ${dmaToken}`,
-            'Content-Type': 'application/json',
-          },
-        });
-        console.log("Direct API response status:", response.status);
-        const data = await response.json();
-        console.log("Direct API response data:", data);
-      } catch (apiError) {
-        console.error("Direct API call failed:", apiError);
-      }
-    }
-  };
-
   if (!dmaToken) {
     return (
       <motion.div
@@ -137,6 +112,7 @@ export const Dashboard = () => {
         dashboardData={dashboardData} 
         onRefetch={handleRefetch} 
         isRefetching={isRefetching} 
+        setCurrentModule={setCurrentModule}
       />
     );
   }
@@ -162,12 +138,6 @@ export const Dashboard = () => {
           >
             {debugMode ? "Hide" : "Show"} Debug Info
           </Button>
-          <Button
-            variant="ghost"
-            onClick={testDataFlow}
-          >
-            Test Data Flow
-          </Button>
         </div>
         {debugMode && (
           <div className="mt-6 p-4 bg-gray-100 rounded-lg text-left">
@@ -181,6 +151,36 @@ export const Dashboard = () => {
     );
   }
 
+  // Transform data for components
+  const profileEvaluation = {
+    overallScore: dashboardData.scores.overall,
+    scores: {
+      profileCompleteness: dashboardData.scores.profileCompleteness,
+      postingActivity: dashboardData.scores.postingActivity,
+      engagementQuality: dashboardData.scores.engagementQuality,
+      networkGrowth: dashboardData.scores.networkGrowth,
+      audienceRelevance: dashboardData.scores.audienceRelevance,
+      contentDiversity: dashboardData.scores.contentDiversity,
+      engagementRate: dashboardData.scores.engagementRate,
+      mutualInteractions: dashboardData.scores.mutualInteractions,
+      profileVisibility: dashboardData.scores.profileVisibility,
+      professionalBrand: dashboardData.scores.professionalBrand,
+    },
+    explanations: dashboardData.methodology
+  };
+
+  const summaryKPIs = {
+    totalConnections: dashboardData.summary.totalConnections,
+    postsLast30Days: dashboardData.summary.posts30d,
+    engagementRate: `${dashboardData.summary.engagementRatePct}%`,
+    connectionsLast30Days: dashboardData.summary.newConnections28d
+  };
+
+  const miniTrends = {
+    posts: Object.entries(dashboardData.trends.weeklyPosts || {}).map(([date, value]) => ({ date, value })),
+    engagements: Object.entries(dashboardData.trends.weeklyEngagements || {}).map(([date, value]) => ({ date, value }))
+  };
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -192,7 +192,9 @@ export const Dashboard = () => {
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold">Dashboard</h2>
-          <p className="text-gray-600 mt-1">LinkedIn performance insights from the last 28 days</p>
+          <p className="text-gray-600 mt-1">
+            LinkedIn performance insights from the last 28 days • {dashboardData.metadata.personPostsCount} person posts analyzed
+          </p>
         </div>
         <div className="flex space-x-2">
           <Button
@@ -262,15 +264,6 @@ export const Dashboard = () => {
                 </div>
               </div>
             </div>
-            <div className="mt-4">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={testDataFlow}
-              >
-                Test Data Flow
-              </Button>
-            </div>
           </div>
         </Card>
       )}
@@ -311,49 +304,21 @@ export const Dashboard = () => {
         />
       </div>
 
-      {/* Profile Evaluation Scores */}
-      <Card variant="glass" className="p-8 bg-gradient-to-br from-white to-blue-50 border-2 border-blue-100 hover:shadow-xl transition-all duration-300">
-        <div className="flex items-center justify-between mb-8">
-          <div className="flex items-center space-x-3">
-            <div className="p-3 bg-gradient-to-r from-blue-500 to-purple-500 rounded-xl">
-              <TrendingUp size={24} className="text-white" />
-            </div>
-            <div>
-              <h3 className="text-2xl font-bold text-gray-900">Profile Evaluation</h3>
-              <p className="text-gray-600">LinkedIn performance analysis (last 28 days)</p>
-            </div>
-          </div>
-          <div className="text-center">
-            <div className={`text-4xl font-bold mb-1 ${
-              dashboardData.scores.overall >= 8 ? 'text-green-600' : 
-              dashboardData.scores.overall >= 5 ? 'text-yellow-600' : 
-              'text-red-600'
-            }`}>
-              {dashboardData.scores.overall}/10
-            </div>
-            <div className={`text-sm font-semibold px-3 py-1 rounded-full ${
-              dashboardData.scores.overall >= 8 ? 'bg-green-100 text-green-800' : 
-              dashboardData.scores.overall >= 5 ? 'bg-yellow-100 text-yellow-800' : 
-              'bg-red-100 text-red-800'
-            }`}>
-              {dashboardData.scores.overall >= 8 ? 'Excellent' : 
-               dashboardData.scores.overall >= 5 ? 'Good' : 'Needs Work'}
-            </div>
-          </div>
-        </div>
+      {/* Main Dashboard Cards */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Profile Evaluation */}
+        <ProfileEvaluationCard 
+          scores={profileEvaluation.scores}
+          overallScore={profileEvaluation.overallScore}
+          explanations={profileEvaluation.explanations}
+        />
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {Object.entries(dashboardData.scores).filter(([key]) => key !== 'overall').map(([key, score], index) => (
-            <ScoreCard 
-              key={key}
-              title={formatScoreTitle(key)}
-              score={score}
-              explanation={dashboardData.explanations[key]}
-              index={index}
-            />
-          ))}
-        </div>
-      </Card>
+        {/* Summary KPIs */}
+        <SummaryKPIsCard kpis={summaryKPIs} />
+      </div>
+
+      {/* Mini Trends */}
+      <MiniTrendsCard trends={miniTrends} />
 
       {/* Quick Actions */}
       <Card variant="glass" className="p-6">
@@ -417,59 +382,7 @@ export const Dashboard = () => {
   );
 };
 
-const ScoreCard = ({ title, score, explanation, index }) => {
-  const getScoreColor = (score) => {
-    if (score === null) return 'text-gray-500 bg-gray-100 border-gray-200';
-    if (score >= 8) return 'text-green-600 bg-green-100 border-green-200';
-    if (score >= 5) return 'text-yellow-600 bg-yellow-100 border-yellow-200';
-    return 'text-red-600 bg-red-100 border-red-200';
-  };
-
-  const getScoreIcon = (score) => {
-    if (score === null) return '—';
-    if (score >= 8) return '✓';
-    if (score >= 5) return '○';
-    return '✗';
-  };
-
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.05 }}
-      className="group relative"
-    >
-      <div className={`flex items-center justify-between p-4 rounded-xl border-2 hover:shadow-lg transition-all duration-300 bg-white ${getScoreColor(score)}`}>
-        <div className="flex items-center space-x-3">
-          <div className={`w-8 h-8 rounded-lg flex items-center justify-center font-bold text-lg ${getScoreColor(score)}`}>
-            {getScoreIcon(score)}
-          </div>
-          <div>
-            <p className="font-semibold text-gray-900">{title}</p>
-            <p className="text-sm text-gray-600">
-              {score === null ? 'Not Available' : 
-               score >= 8 ? 'Excellent' : 
-               score >= 5 ? 'Good' : 'Needs Work'}
-            </p>
-          </div>
-        </div>
-        <div className="flex items-center space-x-2">
-          <span className={`text-xl font-bold ${getScoreColor(score).split(' ')[0]}`}>
-            {score === null ? '—' : score}
-          </span>
-          <div className="relative">
-            <Info size={16} className="text-gray-400 cursor-help" />
-            <div className="absolute bottom-full right-0 mb-2 w-80 p-4 bg-gray-900 text-white text-sm rounded-xl opacity-0 group-hover:opacity-100 transition-opacity z-10 pointer-events-none shadow-xl">
-              {explanation}
-            </div>
-          </div>
-        </div>
-      </div>
-    </motion.div>
-  );
-};
-
-const EmptyActivityState = ({ dashboardData, onRefetch, isRefetching }) => {
+const EmptyActivityState = ({ dashboardData, onRefetch, isRefetching, setCurrentModule }) => {
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -547,7 +460,3 @@ const EmptyActivityState = ({ dashboardData, onRefetch, isRefetching }) => {
     </motion.div>
   );
 };
-
-function formatScoreTitle(key) {
-  return key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase());
-}

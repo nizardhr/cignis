@@ -64,6 +64,14 @@ export interface AnalyticsData {
   scoreImpacts: Record<string, ScoreImpact>;
   timeRange: string;
   lastUpdated: string;
+  metadata?: {
+    hasRecentActivity: boolean;
+    dataSource: string;
+    eventCount: number;
+    description?: string;
+  };
+  note?: string;
+  error?: string;
 }
 
 export const useAnalyticsData = (timeRange: '7d' | '30d' | '90d' = '30d') => {
@@ -86,11 +94,35 @@ export const useAnalyticsData = (timeRange: '7d' | '30d' | '90d' = '30d') => {
 
       const data = await response.json();
       
-      if (data.error) {
+      if (data.error && !data.postsEngagementsTrend) {
         throw new Error(data.message || data.error);
       }
       
-      return data;
+      // Ensure all required fields exist with safe defaults
+      return {
+        postsEngagementsTrend: data.postsEngagementsTrend || [],
+        connectionsGrowth: data.connectionsGrowth || [],
+        postTypesBreakdown: data.postTypesBreakdown || [],
+        topHashtags: data.topHashtags || [],
+        engagementPerPost: data.engagementPerPost || [],
+        messagesSentReceived: data.messagesSentReceived || [],
+        audienceDistribution: data.audienceDistribution || {
+          industries: [],
+          positions: [],
+          locations: []
+        },
+        scoreImpacts: data.scoreImpacts || {},
+        timeRange: data.timeRange || timeRange,
+        lastUpdated: data.lastUpdated || new Date().toISOString(),
+        metadata: data.metadata || {
+          hasRecentActivity: false,
+          dataSource: "unknown",
+          eventCount: 0,
+          description: ""
+        },
+        note: data.note,
+        error: data.error
+      };
     },
     enabled: !!dmaToken,
     staleTime: 10 * 60 * 1000, // 10 minutes

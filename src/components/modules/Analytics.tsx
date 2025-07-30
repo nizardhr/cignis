@@ -33,6 +33,26 @@ export const Analytics = () => {
   const { dmaToken } = useAuthStore();
   const { data: analyticsData, isLoading, error, refetch } = useAnalyticsData(timeRange);
 
+  // Null-safe data extraction with defaults
+  const postsEngagementsTrend = analyticsData?.postsEngagementsTrend ?? [];
+  const connectionsGrowth = analyticsData?.connectionsGrowth ?? [];
+  const postTypesBreakdown = analyticsData?.postTypesBreakdown ?? [];
+  const topHashtags = analyticsData?.topHashtags ?? [];
+  const engagementPerPost = analyticsData?.engagementPerPost ?? [];
+  const messagesSentReceived = analyticsData?.messagesSentReceived ?? [];
+  const audienceDistribution = analyticsData?.audienceDistribution ?? {
+    industries: [],
+    positions: [],
+    locations: []
+  };
+  const scoreImpacts = analyticsData?.scoreImpacts ?? {};
+  const metadata = analyticsData?.metadata ?? {
+    hasRecentActivity: false,
+    dataSource: "unknown",
+    eventCount: 0,
+    description: ""
+  };
+
   if (!dmaToken) {
     return (
       <motion.div
@@ -65,7 +85,7 @@ export const Analytics = () => {
     );
   }
 
-  if (error || !analyticsData) {
+  if (error && !analyticsData) {
     return (
       <div className="text-center py-12">
         <AlertCircle size={48} className="mx-auto text-red-400 mb-4" />
@@ -99,6 +119,9 @@ export const Analytics = () => {
     );
   }
 
+  // Show note if no recent activity
+  const showEmptyState = !metadata.hasRecentActivity && postsEngagementsTrend.length === 0;
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
@@ -110,7 +133,9 @@ export const Analytics = () => {
       <div className="flex flex-col md:flex-row md:items-center justify-between space-y-4 md:space-y-0">
         <div>
           <h2 className="text-3xl font-bold text-gray-900">LinkedIn Analytics</h2>
-          <p className="text-gray-600 mt-1">Comprehensive insights into your LinkedIn performance</p>
+          <p className="text-gray-600 mt-1">
+            {metadata.description || "Comprehensive insights into your LinkedIn performance"}
+          </p>
         </div>
         <div className="flex items-center space-x-3">
           <Button variant="outline" size="sm">
@@ -131,6 +156,16 @@ export const Analytics = () => {
           </Button>
         </div>
       </div>
+
+      {/* Show note for no recent activity */}
+      {analyticsData?.note && (
+        <Card variant="glass" className="p-4 bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200">
+          <div className="flex items-center space-x-3">
+            <AlertCircle size={20} className="text-yellow-600" />
+            <p className="text-yellow-800 font-medium">{analyticsData.note}</p>
+          </div>
+        </Card>
+      )}
 
       {/* Time Filter Section */}
       <Card variant="glass" className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200">
@@ -159,7 +194,7 @@ export const Analytics = () => {
       </Card>
 
       {/* Debug Panel */}
-      {debugMode && analyticsData && (
+      {debugMode && (
         <Card variant="glass" className="p-6 bg-gradient-to-r from-yellow-50 to-orange-50 border border-yellow-200">
           <div className="flex items-center justify-between mb-2">
             <h3 className="font-semibold text-yellow-900 flex items-center">
@@ -178,23 +213,56 @@ export const Analytics = () => {
             <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
               <div className="bg-white p-3 rounded-lg">
                 <div className="font-medium">Time Range</div>
-                <div className="text-yellow-900">{analyticsData.timeRange}</div>
+                <div className="text-yellow-900">{analyticsData?.timeRange || timeRange}</div>
               </div>
               <div className="bg-white p-3 rounded-lg">
                 <div className="font-medium">Last Updated</div>
-                <div className="text-yellow-900">{new Date(analyticsData.lastUpdated).toLocaleString()}</div>
+                <div className="text-yellow-900">{analyticsData?.lastUpdated ? new Date(analyticsData.lastUpdated).toLocaleString() : 'Unknown'}</div>
               </div>
               <div className="bg-white p-3 rounded-lg">
                 <div className="font-medium">Data Points</div>
-                <div className="text-yellow-900">{analyticsData.postsEngagementsTrend?.length || 0} trends</div>
+                <div className="text-yellow-900">{postsEngagementsTrend.length} trends</div>
+              </div>
+              <div className="bg-white p-3 rounded-lg">
+                <div className="font-medium">Data Source</div>
+                <div className="text-yellow-900">{metadata.dataSource}</div>
+              </div>
+              <div className="bg-white p-3 rounded-lg">
+                <div className="font-medium">Event Count</div>
+                <div className="text-yellow-900">{metadata.eventCount}</div>
+              </div>
+              <div className="bg-white p-3 rounded-lg">
+                <div className="font-medium">Has Activity</div>
+                <div className="text-yellow-900">{metadata.hasRecentActivity ? 'Yes' : 'No'}</div>
               </div>
             </div>
           </div>
         </Card>
       )}
 
+      {/* Empty State for No Data */}
+      {showEmptyState && (
+        <Card variant="glass" className="p-12 text-center bg-gradient-to-br from-gray-50 to-blue-50 border-2 border-gray-200">
+          <BarChart3 size={64} className="mx-auto text-gray-300 mb-6" />
+          <h3 className="text-2xl font-bold text-gray-900 mb-4">No Analytics Data Available</h3>
+          <p className="text-gray-600 mb-8 max-w-2xl mx-auto">
+            {analyticsData?.note || "No recent LinkedIn activity found. Start posting and engaging to see analytics here."}
+          </p>
+          <div className="space-y-4">
+            <Button
+              variant="primary"
+              onClick={() => window.open('https://linkedin.com', '_blank')}
+            >
+              <ExternalLink size={16} className="mr-2" />
+              Post on LinkedIn
+            </Button>
+          </div>
+        </Card>
+      )}
+
       {/* Charts Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      {!showEmptyState && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Posts & Engagements Trend */}
         <Card variant="glass" className="p-8 bg-gradient-to-br from-white to-blue-50 border-2 border-blue-100 hover:shadow-xl transition-all duration-300">
           <div className="flex items-center justify-between mb-6">
@@ -210,12 +278,13 @@ export const Analytics = () => {
             <div className="relative group">
               <Info size={18} className="text-gray-400 cursor-help hover:text-gray-600 transition-colors" />
               <div className="absolute bottom-full right-0 mb-2 w-80 p-4 bg-gray-900 text-white text-sm rounded-xl opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-xl">
-                {analyticsData.scoreImpacts.postingActivity.description}
+                {scoreImpacts.postingActivity?.description || "Shows posting activity and engagement over time"}
               </div>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={350}>
-            <LineChart data={analyticsData.postsEngagementsTrend}>
+          {postsEngagementsTrend.length > 0 ? (
+            <ResponsiveContainer width="100%" height={350}>
+              <LineChart data={postsEngagementsTrend}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="date" tick={{ fontSize: 12 }} />
               <YAxis />
@@ -232,10 +301,19 @@ export const Analytics = () => {
               <Line type="monotone" dataKey="likes" stroke="#EF4444" strokeWidth={2} name="Likes" strokeDasharray="5 5" />
               <Line type="monotone" dataKey="comments" stroke="#8B5CF6" strokeWidth={2} name="Comments" strokeDasharray="5 5" />
             </LineChart>
-          </ResponsiveContainer>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-80 flex items-center justify-center text-gray-500 bg-gray-50 rounded-xl">
+              <div className="text-center">
+                <TrendingUp size={48} className="mx-auto mb-4 text-gray-300" />
+                <p className="font-medium">No engagement data available</p>
+                <p className="text-sm mt-1">Start posting to see trends</p>
+              </div>
+            </div>
+          )}
           <div className="mt-4 p-4 bg-blue-50 rounded-xl">
             <p className="text-sm text-blue-800">
-              <strong>Impact:</strong> {analyticsData.scoreImpacts.postingActivity.impact}
+              <strong>Impact:</strong> {scoreImpacts.postingActivity?.impact || "Regular posting improves visibility"}
             </p>
           </div>
         </Card>
@@ -255,12 +333,13 @@ export const Analytics = () => {
             <div className="relative group">
               <Info size={18} className="text-gray-400 cursor-help hover:text-gray-600 transition-colors" />
               <div className="absolute bottom-full right-0 mb-2 w-80 p-4 bg-gray-900 text-white text-sm rounded-xl opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-xl">
-                {analyticsData.scoreImpacts.networkGrowth.description}
+                {scoreImpacts.networkGrowth?.description || "Shows network growth over time"}
               </div>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={350}>
-            <AreaChart data={analyticsData.connectionsGrowth}>
+          {connectionsGrowth.length > 0 ? (
+            <ResponsiveContainer width="100%" height={350}>
+              <AreaChart data={connectionsGrowth}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="date" tick={{ fontSize: 12 }} />
               <YAxis />
@@ -286,10 +365,19 @@ export const Analytics = () => {
                 </linearGradient>
               </defs>
             </AreaChart>
-          </ResponsiveContainer>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-80 flex items-center justify-center text-gray-500 bg-gray-50 rounded-xl">
+              <div className="text-center">
+                <Users size={48} className="mx-auto mb-4 text-gray-300" />
+                <p className="font-medium">No connection data available</p>
+                <p className="text-sm mt-1">Connect with others to see growth</p>
+              </div>
+            </div>
+          )}
           <div className="mt-4 p-4 bg-green-50 rounded-xl">
             <p className="text-sm text-green-800">
-              <strong>Impact:</strong> {analyticsData.scoreImpacts.networkGrowth.impact}
+              <strong>Impact:</strong> {scoreImpacts.networkGrowth?.impact || "Growing network increases reach"}
             </p>
           </div>
         </Card>
@@ -309,39 +397,49 @@ export const Analytics = () => {
             <div className="relative group">
               <Info size={18} className="text-gray-400 cursor-help hover:text-gray-600 transition-colors" />
               <div className="absolute bottom-full right-0 mb-2 w-80 p-4 bg-gray-900 text-white text-sm rounded-xl opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-xl">
-                {analyticsData.scoreImpacts.contentDiversity.description}
+                {scoreImpacts.contentDiversity?.description || "Shows content type distribution"}
               </div>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={350}>
-            <PieChart>
-              <Pie
-                data={analyticsData.postTypesBreakdown}
-                cx="50%"
-                cy="50%"
-                outerRadius={100}
-                innerRadius={40}
-                dataKey="value"
-                label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
-                labelLine={false}
-              >
-                {analyticsData.postTypesBreakdown.map((_, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: 'white', 
-                  border: '1px solid #e5e7eb', 
-                  borderRadius: '12px',
-                  boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
-                }} 
-              />
-            </PieChart>
-          </ResponsiveContainer>
+          {postTypesBreakdown.length > 0 ? (
+            <ResponsiveContainer width="100%" height={350}>
+              <PieChart>
+                <Pie
+                  data={postTypesBreakdown}
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={100}
+                  innerRadius={40}
+                  dataKey="value"
+                  label={({ name, percent }) => `${name || 'Unknown'} ${(percent * 100).toFixed(0)}%`}
+                  labelLine={false}
+                >
+                  {postTypesBreakdown.map((_, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: 'white', 
+                    border: '1px solid #e5e7eb', 
+                    borderRadius: '12px',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.1)'
+                  }} 
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-80 flex items-center justify-center text-gray-500 bg-gray-50 rounded-xl">
+              <div className="text-center">
+                <BarChart3 size={48} className="mx-auto mb-4 text-gray-300" />
+                <p className="font-medium">No content types found</p>
+                <p className="text-sm mt-1">Create posts to see content distribution</p>
+              </div>
+            </div>
+          )}
           <div className="mt-4 p-4 bg-purple-50 rounded-xl">
             <p className="text-sm text-purple-800">
-              <strong>Impact:</strong> {analyticsData.scoreImpacts.contentDiversity.impact}
+              <strong>Impact:</strong> {scoreImpacts.contentDiversity?.impact || "Diverse content improves engagement"}
             </p>
           </div>
         </Card>
@@ -365,9 +463,9 @@ export const Analytics = () => {
               </div>
             </div>
           </div>
-          {analyticsData.topHashtags.length > 0 ? (
+          {topHashtags.length > 0 ? (
             <ResponsiveContainer width="100%" height={350}>
-              <BarChart data={analyticsData.topHashtags} layout="horizontal">
+              <BarChart data={topHashtags} layout="horizontal">
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis type="number" />
                 <YAxis dataKey="hashtag" type="category" width={100} tick={{ fontSize: 12 }} />
@@ -403,10 +501,12 @@ export const Analytics = () => {
             </p>
           </div>
         </Card>
-      </div>
+        </div>
+      )}
 
       {/* Second Row of Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+      {!showEmptyState && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
         {/* Engagement per Post */}
         <Card variant="glass" className="p-8 bg-gradient-to-br from-white to-pink-50 border-2 border-pink-100 hover:shadow-xl transition-all duration-300">
           <div className="flex items-center justify-between mb-6">
@@ -422,13 +522,13 @@ export const Analytics = () => {
             <div className="relative group">
               <Info size={18} className="text-gray-400 cursor-help hover:text-gray-600 transition-colors" />
               <div className="absolute bottom-full right-0 mb-2 w-80 p-4 bg-gray-900 text-white text-sm rounded-xl opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-xl">
-                {analyticsData.scoreImpacts.engagementQuality.description}
+                {scoreImpacts.engagementQuality?.description || "Shows posts with highest engagement"}
               </div>
             </div>
           </div>
-          {analyticsData.engagementPerPost.length > 0 ? (
+          {engagementPerPost.length > 0 ? (
             <ResponsiveContainer width="100%" height={350}>
-              <BarChart data={analyticsData.engagementPerPost}>
+              <BarChart data={engagementPerPost}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="content" tick={{ fontSize: 12 }} />
                 <YAxis />
@@ -456,7 +556,7 @@ export const Analytics = () => {
           )}
           <div className="mt-4 p-4 bg-pink-50 rounded-xl">
             <p className="text-sm text-pink-800">
-              <strong>Impact:</strong> {analyticsData.scoreImpacts.engagementQuality.impact}
+              <strong>Impact:</strong> {scoreImpacts.engagementQuality?.impact || "High engagement improves visibility"}
             </p>
           </div>
         </Card>
@@ -476,13 +576,13 @@ export const Analytics = () => {
             <div className="relative group">
               <Info size={18} className="text-gray-400 cursor-help hover:text-gray-600 transition-colors" />
               <div className="absolute bottom-full right-0 mb-2 w-80 p-4 bg-gray-900 text-white text-sm rounded-xl opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-xl">
-                {analyticsData.scoreImpacts.mutualInteractions.description}
+                {scoreImpacts.mutualInteractions?.description || "Shows message activity patterns"}
               </div>
             </div>
           </div>
-          {analyticsData.messagesSentReceived.some(d => d.sent > 0 || d.received > 0) ? (
+          {messagesSentReceived.some(d => (d?.sent ?? 0) > 0 || (d?.received ?? 0) > 0) ? (
             <ResponsiveContainer width="100%" height={350}>
-              <BarChart data={analyticsData.messagesSentReceived}>
+              <BarChart data={messagesSentReceived}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                 <XAxis dataKey="date" tick={{ fontSize: 12 }} />
                 <YAxis />
@@ -509,14 +609,16 @@ export const Analytics = () => {
           )}
           <div className="mt-4 p-4 bg-cyan-50 rounded-xl">
             <p className="text-sm text-cyan-800">
-              <strong>Impact:</strong> {analyticsData.scoreImpacts.mutualInteractions.impact}
+              <strong>Impact:</strong> {scoreImpacts.mutualInteractions?.impact || "Active messaging builds relationships"}
             </p>
           </div>
         </Card>
-      </div>
+        </div>
+      )}
 
       {/* Audience Distribution */}
-      <Card variant="glass" className="p-8 bg-gradient-to-br from-white to-gray-50 border-2 border-gray-100">
+      {!showEmptyState && (
+        <Card variant="glass" className="p-8 bg-gradient-to-br from-white to-gray-50 border-2 border-gray-100">
         <div className="flex items-center space-x-3 mb-8">
           <div className="p-3 bg-gradient-to-r from-gray-600 to-gray-700 rounded-xl">
             <Users size={24} className="text-white" />
@@ -535,36 +637,45 @@ export const Analytics = () => {
             <div className="relative group">
               <Info size={16} className="text-gray-400 cursor-help hover:text-gray-600 transition-colors" />
               <div className="absolute bottom-full right-0 mb-2 w-72 p-3 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-lg">
-                {analyticsData.scoreImpacts.audienceRelevance.description}
+                {scoreImpacts.audienceRelevance?.description || "Shows industry distribution of your network"}
               </div>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={280}>
-            <PieChart>
-              <Pie
-                data={analyticsData.audienceDistribution.industries}
-                cx="50%"
-                cy="50%"
-                outerRadius={90}
-                innerRadius={30}
-                dataKey="value"
-                label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
-                labelLine={false}
-              >
-                {analyticsData.audienceDistribution.industries.map((_, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                ))}
-              </Pie>
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: 'white', 
-                  border: '1px solid #e5e7eb', 
-                  borderRadius: '8px',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-                }} 
-              />
-            </PieChart>
-          </ResponsiveContainer>
+          {audienceDistribution.industries.length > 0 ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <PieChart>
+                <Pie
+                  data={audienceDistribution.industries}
+                  cx="50%"
+                  cy="50%"
+                  outerRadius={90}
+                  innerRadius={30}
+                  dataKey="value"
+                  label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
+                  labelLine={false}
+                >
+                  {audienceDistribution.industries.map((_, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  contentStyle={{ 
+                    backgroundColor: 'white', 
+                    border: '1px solid #e5e7eb', 
+                    borderRadius: '8px',
+                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                  }} 
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-72 flex items-center justify-center text-gray-500">
+              <div className="text-center">
+                <Users size={32} className="mx-auto mb-2 text-gray-300" />
+                <p className="text-sm">No industry data</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Position Distribution */}
@@ -578,8 +689,9 @@ export const Analytics = () => {
               </div>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={analyticsData.audienceDistribution.positions.slice(0, 8)} layout="horizontal">
+          {audienceDistribution.positions.length > 0 ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={audienceDistribution.positions.slice(0, 8)} layout="horizontal">
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis type="number" />
               <YAxis dataKey="name" type="category" width={120} tick={{ fontSize: 11 }} />
@@ -593,7 +705,15 @@ export const Analytics = () => {
               />
               <Bar dataKey="value" fill="#82ca9d" radius={[0, 4, 4, 0]} />
             </BarChart>
-          </ResponsiveContainer>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-72 flex items-center justify-center text-gray-500">
+              <div className="text-center">
+                <Users size={32} className="mx-auto mb-2 text-gray-300" />
+                <p className="text-sm">No position data</p>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Location Distribution */}
@@ -607,8 +727,9 @@ export const Analytics = () => {
               </div>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={280}>
-            <BarChart data={analyticsData.audienceDistribution.locations.slice(0, 8)} layout="horizontal">
+          {audienceDistribution.locations.length > 0 ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <BarChart data={audienceDistribution.locations.slice(0, 8)} layout="horizontal">
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis type="number" />
               <YAxis dataKey="name" type="category" width={120} tick={{ fontSize: 11 }} />
@@ -622,13 +743,23 @@ export const Analytics = () => {
               />
               <Bar dataKey="value" fill="#ffc658" radius={[0, 4, 4, 0]} />
             </BarChart>
-          </ResponsiveContainer>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-72 flex items-center justify-center text-gray-500">
+              <div className="text-center">
+                <Users size={32} className="mx-auto mb-2 text-gray-300" />
+                <p className="text-sm">No location data</p>
+              </div>
+            </div>
+          )}
         </div>
         </div>
-      </Card>
+        </Card>
+      )}
 
       {/* Score Improvement Tips */}
-      <Card variant="glass" className="p-8 bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200">
+      {!showEmptyState && Object.keys(scoreImpacts).length > 0 && (
+        <Card variant="glass" className="p-8 bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200">
         <div className="flex items-center space-x-3 mb-8">
           <div className="p-3 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-xl">
             <TrendingUp size={24} className="text-white" />
@@ -639,7 +770,7 @@ export const Analytics = () => {
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {Object.entries(analyticsData.scoreImpacts).slice(0, 6).map(([key, impact]) => (
+          {Object.entries(scoreImpacts).slice(0, 6).map(([key, impact]) => (
             <motion.div 
               key={key} 
               className="bg-white p-6 rounded-xl border border-gray-200 hover:shadow-lg transition-all duration-300"
@@ -648,9 +779,9 @@ export const Analytics = () => {
               <h4 className="font-bold text-gray-900 capitalize mb-3 text-lg">
                 {key.replace(/([A-Z])/g, ' $1').trim()}
               </h4>
-              <p className="text-sm text-gray-700 mb-4 leading-relaxed">{impact.description}</p>
+              <p className="text-sm text-gray-700 mb-4 leading-relaxed">{impact?.description || "No description available"}</p>
               <ul className="text-sm text-gray-600 space-y-2">
-                {impact.tips.map((tip, index) => (
+                {(impact?.tips ?? []).map((tip, index) => (
                   <li key={index} className="flex items-start space-x-2">
                     <span className="w-2 h-2 bg-indigo-500 rounded-full mt-2 flex-shrink-0"></span>
                     <span className="leading-relaxed">{tip}</span>
@@ -660,7 +791,8 @@ export const Analytics = () => {
             </motion.div>
           ))}
         </div>
-      </Card>
+        </Card>
+      )}
     </motion.div>
   );
 };
