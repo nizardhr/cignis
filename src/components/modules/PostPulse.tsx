@@ -455,3 +455,4 @@ export const PostPulse = () => {
       )}
     </motion.div>
   );
+};
