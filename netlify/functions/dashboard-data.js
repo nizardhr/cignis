@@ -25,97 +25,109 @@ export async function handler(event, context) {
   }
 
   try {
-    console.log("Dashboard Data: Starting comprehensive LinkedIn analysis");
+    console.log("Dashboard Data: Starting LinkedIn DMA analysis");
     const startTime = Date.now();
 
-    // Fetch all required data in parallel
-    const [
-      profileData,
-      connectionsData,
-      postsData,
-      changelogData,
-      skillsData,
-      positionsData,
-      educationData
-    ] = await Promise.all([
-      fetchLinkedInData(authorization, "linkedin-snapshot", "PROFILE"),
-      fetchLinkedInData(authorization, "linkedin-snapshot", "CONNECTIONS"),
-      fetchLinkedInData(authorization, "linkedin-snapshot", "MEMBER_SHARE_INFO"),
-      fetchLinkedInData(authorization, "linkedin-changelog", null, "count=200"),
-      fetchLinkedInData(authorization, "linkedin-snapshot", "SKILLS"),
-      fetchLinkedInData(authorization, "linkedin-snapshot", "POSITIONS"),
-      fetchLinkedInData(authorization, "linkedin-snapshot", "EDUCATION")
+    // First, verify DMA consent is active
+    const consentCheck = await verifyDMAConsent(authorization);
+    if (!consentCheck.isActive) {
+      return {
+        statusCode: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+        body: JSON.stringify({
+          error: "DMA not enabled",
+          message: consentCheck.message,
+          needsReconnect: true
+        }),
+      };
+    }
+
+    // Calculate 28 days ago timestamp
+    const twentyEightDaysAgo = Date.now() - (28 * 24 * 60 * 60 * 1000);
+
+    // Fetch Member Changelog (last 28 days)
+    const changelogData = await fetchMemberChangelog(authorization, twentyEightDaysAgo);
+    
+    // Fetch Snapshot data for baseline metrics
+    const [profileSnapshot, connectionsSnapshot, postsSnapshot] = await Promise.all([
+      fetchMemberSnapshot(authorization, "PROFILE"),
+      fetchMemberSnapshot(authorization, "CONNECTIONS"),
+      fetchMemberSnapshot(authorization, "MEMBER_SHARE_INFO")
     ]);
 
     const fetchTime = Date.now() - startTime;
     console.log(`Dashboard Data: Data fetching completed in ${fetchTime}ms`);
 
-    // Log data availability for debugging
-    console.log("Dashboard Data: Comprehensive data summary:", {
-      profile: profileData?.elements?.length || 0,
-      connections: connectionsData?.elements?.[0]?.snapshotData?.length || 0,
-      posts: postsData?.elements?.[0]?.snapshotData?.length || 0,
-      changelog: changelogData?.elements?.length || 0,
-      skills: skillsData?.elements?.[0]?.snapshotData?.length || 0,
-      positions: positionsData?.elements?.[0]?.snapshotData?.length || 0,
-      education: educationData?.elements?.[0]?.snapshotData?.length || 0,
-      fetchTimeMs: fetchTime
-    });
-
+    // Process the data
     const processingStartTime = Date.now();
+    
+    // Parse changelog events
+    const changelogEvents = changelogData?.elements || [];
+    const posts = changelogEvents.filter(e => e.resourceName === "ugcPosts" && (e.method === "CREATE" || e.method === "UPDATE"));
+    const likes = changelogEvents.filter(e => e.resourceName === "socialActions/likes" && e.method === "CREATE");
+    const comments = changelogEvents.filter(e => e.resourceName === "socialActions/comments" && e.method === "CREATE");
+    const invitations = changelogEvents.filter(e => e.resourceName === "invitations");
 
-    // Calculate profile evaluation scores
-    const profileEvaluation = calculateProfileEvaluation({
-      profileData,
-      connectionsData,
-      postsData,
-      changelogData,
-      skillsData,
-      positionsData,
-      educationData
+    console.log("Changelog analysis:", {
+      totalEvents: changelogEvents.length,
+      posts: posts.length,
+      likes: likes.length,
+      comments: comments.length,
+      invitations: invitations.length
     });
 
-    // Calculate summary KPIs
-    const summaryKPIs = calculateSummaryKPIs({
-      connectionsData,
-      postsData,
-      changelogData
+    // Calculate scores
+    const scores = calculateScores({
+      posts,
+      likes,
+      comments,
+      invitations,
+      profileSnapshot,
+      connectionsSnapshot,
+      postsSnapshot
     });
 
-    // Calculate mini trends
-    const miniTrends = calculateMiniTrends(changelogData);
+    // Calculate summary metrics
+    const summary = calculateSummary({
+      posts,
+      likes,
+      comments,
+      invitations,
+      connectionsSnapshot
+    });
+
+    // Calculate trends
+    const trends = calculateTrends(changelogEvents);
+
+    // Calculate content types
+    const content = calculateContentTypes(posts);
 
     const processingTime = Date.now() - processingStartTime;
     console.log(`Dashboard Data: Processing completed in ${processingTime}ms`);
 
     const result = {
-      profileEvaluation,
-      summaryKPIs,
-      miniTrends,
-      lastUpdated: new Date().toISOString(),
+      scores: {
+        overall: calculateOverallScore(scores),
+        ...scores
+      },
+      summary,
+      trends,
+      content,
+      explanations: getExplanations(),
       metadata: {
         fetchTimeMs: fetchTime,
         processingTimeMs: processingTime,
         totalTimeMs: Date.now() - startTime,
-        dataQuality: {
-          hasProfile: !!profileData?.elements?.length,
-          hasConnections: !!(connectionsData?.elements?.[0]?.snapshotData?.length),
-          hasPosts: !!(postsData?.elements?.[0]?.snapshotData?.length),
-          hasChangelog: !!(changelogData?.elements?.length),
-          completeness: calculateDataCompleteness({
-            profileData,
-            connectionsData,
-            postsData,
-            changelogData,
-            skillsData,
-            positionsData,
-            educationData
-          })
-        }
-      }
+        dataSource: changelogEvents.length > 0 ? "changelog" : "snapshot",
+        hasRecentActivity: changelogEvents.length > 0
+      },
+      lastUpdated: new Date().toISOString()
     };
 
-    console.log("Dashboard Data: Analysis complete with high-quality metrics");
+    console.log("Dashboard Data: Analysis complete with real metrics");
 
     return {
       statusCode: 200,
@@ -128,7 +140,6 @@ export async function handler(event, context) {
     };
   } catch (error) {
     console.error("Dashboard Data Error:", error);
-    console.error("Dashboard Data Error Stack:", error.stack);
     return {
       statusCode: 500,
       headers: {
@@ -144,770 +155,369 @@ export async function handler(event, context) {
   }
 }
 
-async function fetchLinkedInData(authorization, endpoint, domain = null, extraParams = "") {
+async function verifyDMAConsent(authorization) {
   try {
-    const startTime = Date.now();
-    let url = `/.netlify/functions/${endpoint}`;
-    const params = new URLSearchParams();
-    
-    if (domain) {
-      params.append("domain", domain);
-    }
-    
-    if (extraParams) {
-      const extraParamsObj = new URLSearchParams(extraParams);
-      for (const [key, value] of extraParamsObj) {
-        params.append(key, value);
+    const response = await fetch("https://api.linkedin.com/rest/memberAuthorizations?q=memberAndApplication", {
+      headers: {
+        Authorization: authorization,
+        "LinkedIn-Version": "202312"
       }
+    });
+
+    if (!response.ok) {
+      return {
+        isActive: false,
+        message: "Unable to verify DMA consent status"
+      };
     }
+
+    const data = await response.json();
+    const hasConsent = data.elements && data.elements.length > 0;
+
+    if (!hasConsent) {
+      // Try to enable DMA consent
+      try {
+        const enableResponse = await fetch("https://api.linkedin.com/rest/memberAuthorizations", {
+          method: "POST",
+          headers: {
+            Authorization: authorization,
+            "LinkedIn-Version": "202312",
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({})
+        });
+
+        if (enableResponse.ok) {
+          return { isActive: true, message: "DMA consent enabled" };
+        }
+      } catch (enableError) {
+        console.log("Could not auto-enable DMA consent:", enableError.message);
+      }
+
+      return {
+        isActive: false,
+        message: "DMA consent not active. Please reconnect your LinkedIn account with data access permissions."
+      };
+    }
+
+    return { isActive: true, message: "DMA consent active" };
+  } catch (error) {
+    console.error("Error verifying DMA consent:", error);
+    return {
+      isActive: false,
+      message: "Error checking DMA consent status"
+    };
+  }
+}
+
+async function fetchMemberChangelog(authorization, startTime) {
+  try {
+    const url = `https://api.linkedin.com/rest/memberChangeLogs?q=memberAndApplication&count=50&startTime=${startTime}`;
     
-    if (params.toString()) {
-      url += `?${params.toString()}`;
-    }
-
-    console.log(`Fetching ${endpoint}${domain ? ` (${domain})` : ''}: ${url}`);
-
     const response = await fetch(url, {
       headers: {
         Authorization: authorization,
-        "LinkedIn-Version": "202312",
-      },
+        "LinkedIn-Version": "202312"
+      }
     });
 
-    const fetchTime = Date.now() - startTime;
+    if (!response.ok) {
+      console.warn(`Changelog API returned ${response.status}, falling back to snapshot data`);
+      return { elements: [] };
+    }
+
+    const data = await response.json();
+    console.log(`Fetched ${data.elements?.length || 0} changelog events`);
+    return data;
+  } catch (error) {
+    console.error("Error fetching changelog:", error);
+    return { elements: [] };
+  }
+}
+
+async function fetchMemberSnapshot(authorization, domain) {
+  try {
+    const url = `https://api.linkedin.com/rest/memberSnapshotData?q=criteria&domain=${domain}`;
+    
+    const response = await fetch(url, {
+      headers: {
+        Authorization: authorization,
+        "LinkedIn-Version": "202312"
+      }
+    });
 
     if (!response.ok) {
-      const errorText = await response.text().catch(() => 'No error details');
-      console.error(`Failed to fetch ${endpoint} ${domain}: ${response.status} ${response.statusText} (${fetchTime}ms)`, errorText);
+      console.warn(`Snapshot API for ${domain} returned ${response.status}`);
       return null;
     }
 
     const data = await response.json();
-    console.log(`Successfully fetched ${endpoint}${domain ? ` (${domain})` : ''} in ${fetchTime}ms`);
-    
+    console.log(`Fetched snapshot data for ${domain}: ${data.elements?.[0]?.snapshotData?.length || 0} items`);
     return data;
   } catch (error) {
-    console.error(`Network error fetching ${endpoint} ${domain}:`, error.message);
+    console.error(`Error fetching snapshot for ${domain}:`, error);
     return null;
   }
 }
 
-function calculateDataCompleteness(data) {
-  const {
-    profileData,
-    connectionsData,
-    postsData,
-    changelogData,
-    skillsData,
-    positionsData,
-    educationData
-  } = data;
-
-  let score = 0;
-  let maxScore = 7;
-
-  if (profileData?.elements?.length) score += 1;
-  if (connectionsData?.elements?.[0]?.snapshotData?.length) score += 1;
-  if (postsData?.elements?.[0]?.snapshotData?.length) score += 1;
-  if (changelogData?.elements?.length) score += 1;
-  if (skillsData?.elements?.[0]?.snapshotData?.length) score += 1;
-  if (positionsData?.elements?.[0]?.snapshotData?.length) score += 1;
-  if (educationData?.elements?.[0]?.snapshotData?.length) score += 1;
-
-  return Math.round((score / maxScore) * 100);
-}
-
-function calculateProfileEvaluation(data) {
-  const {
-    profileData,
-    connectionsData,
-    postsData,
-    changelogData,
-    skillsData,
-    positionsData,
-    educationData
-  } = data;
-
+function calculateScores({ posts, likes, comments, invitations, profileSnapshot, connectionsSnapshot, postsSnapshot }) {
   const scores = {};
 
-  // 1. Profile Completeness (0-10)
-  scores.profileCompleteness = calculateProfileCompleteness({
-    profileData,
-    skillsData,
-    positionsData,
-    educationData
-  });
+  // Profile Completeness (0-10) - from Snapshot PROFILE
+  scores.profileCompleteness = calculateProfileCompleteness(profileSnapshot);
 
-  // 2. Posting Activity (0-10)
-  scores.postingActivity = calculatePostingActivity(postsData, changelogData);
+  // Posting Activity (0-10) - from Changelog ugcPosts (28 days)
+  scores.postingActivity = calculatePostingActivity(posts.length);
 
-  // 3. Engagement Quality (0-10)
-  scores.engagementQuality = calculateEngagementQuality(changelogData);
+  // Engagement Quality (0-10) - average engagement per post
+  scores.engagementQuality = calculateEngagementQuality(posts.length, likes.length + comments.length);
 
-  // 4. Network Growth (0-10)
-  scores.networkGrowth = calculateNetworkGrowth(connectionsData);
+  // Network Growth (0-10) - invitations activity (28 days)
+  scores.networkGrowth = calculateNetworkGrowth(invitations.length);
 
-  // 5. Audience Relevance (0-10)
-  scores.audienceRelevance = calculateAudienceRelevance(connectionsData);
+  // Audience Relevance (0-10) - from Snapshot CONNECTIONS
+  scores.audienceRelevance = calculateAudienceRelevance(connectionsSnapshot);
 
-  // 6. Content Diversity (0-10)
-  scores.contentDiversity = calculateContentDiversity(postsData, changelogData);
+  // Content Diversity (0-10) - distinct shareMediaCategory types
+  scores.contentDiversity = calculateContentDiversity(posts);
 
-  // 7. Engagement Rate vs Followers (0-10)
-  scores.engagementRate = calculateEngagementRate(postsData, changelogData, connectionsData);
+  // Engagement Rate (0-10) - total engagements / posts
+  const engagementRate = posts.length > 0 ? ((likes.length + comments.length) / posts.length) * 100 : 0;
+  scores.engagementRate = calculateEngagementRateScore(engagementRate);
 
-  // 8. Mutual Interactions (0-10)
-  scores.mutualInteractions = calculateMutualInteractions(changelogData);
+  // Mutual Interactions (0-10) - comment exchanges
+  scores.mutualInteractions = calculateMutualInteractions(comments);
 
-  // 9. Profile Visibility Signals (0-10)
-  scores.profileVisibility = calculateProfileVisibility(profileData);
+  // Profile Visibility (0-10) - from Snapshot if available
+  scores.profileVisibility = calculateProfileVisibility(profileSnapshot);
 
-  // 10. Professional Brand Signals (0-10)
-  scores.professionalBrand = calculateProfessionalBrand({
-    profileData,
-    postsData,
-    positionsData
-  });
+  // Professional Brand (0-10) - recommendations + endorsements
+  scores.professionalBrand = calculateProfessionalBrand(profileSnapshot);
 
-  // Calculate overall score
-  const overallScore = Object.values(scores).reduce((sum, score) => sum + score, 0) / 10;
-
-  console.log("Profile evaluation scores calculated:", {
-    individual: scores,
-    overall: overallScore
-  });
-
-  return {
-    scores,
-    overallScore: Math.round(overallScore * 10) / 10,
-    explanations: getScoreExplanations()
-  };
+  return scores;
 }
 
-function calculateProfileCompleteness({ profileData, skillsData, positionsData, educationData }) {
-  console.log("=== ENHANCED PROFILE COMPLETENESS CALCULATION ===");
-  
+function calculateProfileCompleteness(profileSnapshot) {
+  if (!profileSnapshot?.elements?.[0]?.snapshotData) return 2;
+
+  const profile = profileSnapshot.elements[0].snapshotData[0] || {};
   let score = 0;
-  
-  // Extract actual data arrays from LinkedIn API response
-  const profileSnapshot = profileData?.elements?.[0]?.snapshotData || [];
-  const skillsSnapshot = skillsData?.elements?.[0]?.snapshotData || [];
-  const positionsSnapshot = positionsData?.elements?.[0]?.snapshotData || [];
-  const educationSnapshot = educationData?.elements?.[0]?.snapshotData || [];
-  
-  console.log("Profile completeness data:", {
-    profileFields: profileSnapshot.length,
-    skills: skillsSnapshot.length,
-    positions: positionsSnapshot.length,
-    education: educationSnapshot.length
-  });
-  
-  // LinkedIn profile data might be an array, find the main profile entry
-  const profile = profileSnapshot.find(p => 
-    p["First Name"] || p["Last Name"] || p.firstName || p.lastName || 
-    p.headline || p.Headline || p.industry || p.Industry
-  ) || profileSnapshot[0] || {};
-  
-  console.log("Main profile entry:", Object.keys(profile));
-  
-  // Enhanced basic info scoring (4 points)
-  if (profile["First Name"] || profile.firstName) {
-    score += 1;
-    console.log("✓ First name found");
-  }
-  if (profile["Last Name"] || profile.lastName) {
-    score += 1;
-    console.log("✓ Last name found");
-  }
-  if (profile["Headline"] || profile.headline) {
-    score += 1;
-    console.log("✓ Headline found");
-  }
-  if (profile["Industry"] || profile.industry) {
-    score += 1;
-    console.log("✓ Industry found");
-  }
-  
-  // Enhanced skills scoring (2 points)
-  const skillsCount = skillsSnapshot.length;
-  const skillsPoints = Math.min(skillsCount / 3, 2); // More generous scoring
-  score += skillsPoints;
-  console.log(`✓ Skills: ${skillsCount} skills = ${skillsPoints} points`);
-  
-  // Enhanced experience scoring (2 points)
-  const positionsCount = positionsSnapshot.length;
-  const positionsPoints = Math.min(positionsCount, 2); // 1 point per position, max 2
-  score += positionsPoints;
-  console.log(`✓ Positions: ${positionsCount} positions = ${positionsPoints} points`);
-  
-  // Enhanced education scoring (2 points)
-  const educationCount = educationSnapshot.length;
-  const educationPoints = Math.min(educationCount, 2);
-  score += educationPoints;
-  console.log(`✓ Education: ${educationCount} entries = ${educationPoints} points`);
-  
-  const finalScore = Math.min(Math.round(score), 10);
-  console.log(`Final profile completeness score: ${finalScore}/10`);
-  
-  return finalScore;
+  let maxScore = 10;
+
+  // Check key profile fields
+  if (profile["First Name"] || profile.firstName) score += 1;
+  if (profile["Last Name"] || profile.lastName) score += 1;
+  if (profile["Headline"] || profile.headline) score += 2;
+  if (profile["Summary"] || profile.summary || profile.about) score += 2;
+  if (profile["Industry"] || profile.industry) score += 1;
+  if (profile["Location"] || profile.location) score += 1;
+  if (profile["Profile Picture"] || profile.picture) score += 1;
+  if (profile["Background Image"] || profile.backgroundImage) score += 1;
+
+  return Math.min(score, maxScore);
 }
 
-function calculatePostingActivity(postsData, changelogData) {
-  console.log("=== ENHANCED POSTING ACTIVITY CALCULATION ===");
-  
-  // Get posts from changelog (last 28 days)
-  const posts = changelogData?.elements?.filter(e => 
-    e.resourceName === "ugcPosts" && e.method === "CREATE"
-  ) || [];
-  
-  // Also check snapshot data for historical posts
-  const snapshotPosts = postsData?.elements?.[0]?.snapshotData || [];
-  
-  console.log("Posting activity data:", {
-    changelogPosts: posts.length,
-    snapshotPosts: snapshotPosts.length
-  });
-  
-  const last30Days = Date.now() - (30 * 24 * 60 * 60 * 1000);
-  const recentPosts = posts.filter(p => p.capturedAt >= last30Days);
-  
-  // If no recent posts in changelog, use snapshot data
-  const totalRecentPosts = recentPosts.length > 0 ? recentPosts.length : Math.min(snapshotPosts.length, 15);
-  
-  console.log(`Recent posts calculation: ${recentPosts.length} from changelog, ${snapshotPosts.length} from snapshot, final: ${totalRecentPosts}`);
-  
-  // Enhanced scoring based on posting frequency (0-10)
-  let score = 0;
-  if (totalRecentPosts >= 30) score = 10;      // Very active (1+ per day)
-  else if (totalRecentPosts >= 20) score = 9;  // Highly active
-  else if (totalRecentPosts >= 15) score = 8;  // Very good
-  else if (totalRecentPosts >= 10) score = 7;  // Good
-  else if (totalRecentPosts >= 7) score = 6;   // Decent (1-2 per week)
-  else if (totalRecentPosts >= 5) score = 5;   // Moderate
-  else if (totalRecentPosts >= 3) score = 4;   // Low but present
-  else if (totalRecentPosts >= 1) score = 3;   // Minimal
-  else score = 0;
-  
-  console.log(`Posting activity score: ${score}/10 (${totalRecentPosts} posts)`);
-  return score;
+function calculatePostingActivity(postsCount) {
+  // Map posts in 28 days to 0-10 scale
+  if (postsCount >= 8) return 10;
+  if (postsCount >= 4) return 7;
+  if (postsCount > 0) return 5;
+  return 2;
 }
 
-function calculateEngagementQuality(changelogData) {
-  console.log("=== ENHANCED ENGAGEMENT QUALITY CALCULATION ===");
+function calculateEngagementQuality(postsCount, totalEngagements) {
+  if (postsCount === 0) return 2;
   
-  const elements = changelogData?.elements || [];
-  console.log("Processing changelog elements:", elements.length);
-  
-  const likes = elements.filter(e => e.resourceName === "socialActions/likes" && e.method === "CREATE");
-  const comments = elements.filter(e => e.resourceName === "socialActions/comments" && e.method === "CREATE");
-  const shares = elements.filter(e => e.resourceName === "socialActions/shares" && e.method === "CREATE");
-  const posts = elements.filter(e => e.resourceName === "ugcPosts" && e.method === "CREATE");
-  
-  console.log("Enhanced engagement data:", {
-    likes: likes.length,
-    comments: comments.length,
-    shares: shares.length,
-    posts: posts.length
-  });
-  
-  if (posts.length === 0) return 0;
-  
-  // Enhanced engagement calculation with weighted scoring
-  const totalEngagement = likes.length + (comments.length * 2) + (shares.length * 3); // Weight comments and shares higher
-  const avgEngagement = totalEngagement / posts.length;
-  
-  console.log("Engagement calculation:", {
-    totalEngagement,
-    avgEngagement,
-    weightedScore: avgEngagement
-  });
-  
-  // Enhanced scoring system
-  let score = 0;
-  if (avgEngagement >= 50) score = 10;      // Exceptional engagement
-  else if (avgEngagement >= 30) score = 9;  // Excellent
-  else if (avgEngagement >= 20) score = 8;  // Very good
-  else if (avgEngagement >= 15) score = 7;  // Good
-  else if (avgEngagement >= 10) score = 6;  // Above average
-  else if (avgEngagement >= 7) score = 5;   // Average
-  else if (avgEngagement >= 5) score = 4;   // Below average
-  else if (avgEngagement >= 3) score = 3;   // Low
-  else if (avgEngagement >= 1) score = 2;   // Very low
-  else score = 0;
-  
-  console.log(`Enhanced engagement quality score: ${score}/10 (weighted avg: ${avgEngagement.toFixed(2)})`);
-  return score;
+  const avgEngagement = totalEngagements / postsCount;
+  if (avgEngagement >= 10) return 10;
+  if (avgEngagement >= 5) return 7;
+  if (avgEngagement > 0) return 5;
+  return 2;
 }
 
-function calculateNetworkGrowth(connectionsData, changelogData) {
-  console.log("=== NETWORK GROWTH CALCULATION ===");
-  
-  const connections = connectionsData?.elements?.[0]?.snapshotData || [];
-  console.log("Total connections from snapshot:", connections.length);
-  console.log("Sample connection:", connections[0]);
-  
-  // Also check changelog for invitation acceptances
-  const invitations = changelogData?.elements?.filter(e => 
-    e.resourceName === "invitations" && e.method === "CREATE"
-  ) || [];
-  
-  console.log("Invitations in changelog:", invitations.length);
-  console.log("Sample invitation:", invitations[0]);
-  
-  const last30Days = Date.now() - (30 * 24 * 60 * 60 * 1000);
-  
-  // Count recent connections from snapshot data
-  const recentConnections = connections.filter(conn => {
-    const connectedDate = new Date(conn["Connected On"] || conn.connectedOn || conn.date || conn.Date);
-    return connectedDate.getTime() >= last30Days;
-  });
-  
-  // Add recent invitations from changelog
-  const recentInvitations = invitations.filter(inv => inv.capturedAt >= last30Days);
-  
-  const totalRecentGrowth = recentConnections.length + recentInvitations.length;
-  
-  console.log("Network growth (30d):", {
-    recentConnections: recentConnections.length,
-    recentInvitations: recentInvitations.length,
-    total: totalRecentGrowth
-  });
-  
-  let score = 0;
-  if (totalRecentGrowth >= 50) score = 10;
-  else if (totalRecentGrowth >= 30) score = 8;
-  else if (totalRecentGrowth >= 20) score = 6;
-  else if (totalRecentGrowth >= 10) score = 4;
-  else if (totalRecentGrowth >= 5) score = 2;
-  else score = 0;
-  
-  console.log(`Network growth score: ${score}/10 (${totalRecentGrowth} new connections)`);
-  return score;
+function calculateNetworkGrowth(invitationsCount) {
+  if (invitationsCount >= 20) return 10;
+  if (invitationsCount >= 10) return 7;
+  if (invitationsCount > 0) return 5;
+  return 2;
 }
 
-function calculateAudienceRelevance(connectionsData) {
-  console.log("=== AUDIENCE RELEVANCE CALCULATION ===");
-  
-  const connections = connectionsData?.elements?.[0]?.snapshotData || [];
-  console.log("Processing connections for audience relevance:", connections.length);
-  console.log("Sample connection for relevance:", connections[0]);
-  
-  // Calculate industry diversity
+function calculateAudienceRelevance(connectionsSnapshot) {
+  if (!connectionsSnapshot?.elements?.[0]?.snapshotData) return 5;
+
+  const connections = connectionsSnapshot.elements[0].snapshotData;
   const industries = {};
+  
   connections.forEach(conn => {
-    const industry = conn.Industry || conn.industry || conn.Company || conn.company || "Unknown";
+    const industry = conn.Industry || conn.industry || "Unknown";
     industries[industry] = (industries[industry] || 0) + 1;
   });
-  
+
   const industryCount = Object.keys(industries).length;
   const totalConnections = connections.length;
+
+  // Score based on industry diversity
+  if (totalConnections === 0) return 2;
+  const diversityRatio = industryCount / Math.min(totalConnections, 20); // Cap at 20 for calculation
   
-  console.log("Industry diversity:", {
-    uniqueIndustries: industryCount,
-    totalConnections,
-    topIndustries: Object.entries(industries).sort(([,a], [,b]) => b - a).slice(0, 3)
-  });
-  
-  if (totalConnections === 0) return 0;
-  
-  // Score based on industry diversity and professional titles
-  const diversityScore = Math.min(industryCount / 10, 1) * 5; // 0-5 points
-  
-  const professionalConnections = connections.filter(conn => 
-    (conn.Position && conn.Position.trim()) || (conn.position && conn.position.trim()) || 
-    (conn.Title && conn.Title.trim()) || (conn.title && conn.title.trim())
-  ).length;
-  const professionalRatio = professionalConnections / totalConnections;
-  const professionalScore = professionalRatio * 5; // 0-5 points
-  
-  const finalScore = Math.round(diversityScore + professionalScore);
-  
-  console.log("Audience relevance calculation:", {
-    diversityScore,
-    professionalScore,
-    professionalConnections,
-    professionalRatio,
-    finalScore
-  });
-  
-  console.log(`Audience relevance score: ${finalScore}/10`);
-  return finalScore;
+  if (diversityRatio >= 0.8) return 10;
+  if (diversityRatio >= 0.6) return 8;
+  if (diversityRatio >= 0.4) return 6;
+  if (diversityRatio >= 0.2) return 4;
+  return 2;
 }
 
-function calculateContentDiversity(postsData, changelogData) {
-  console.log("=== CONTENT DIVERSITY CALCULATION ===");
+function calculateContentDiversity(posts) {
+  const mediaTypes = new Set();
   
-  // Check both snapshot and changelog data for content types
-  const snapshotPosts = postsData?.elements?.[0]?.snapshotData || [];
-  const posts = changelogData?.elements?.filter(e => 
-    e.resourceName === "ugcPosts" && e.method === "CREATE"
-  ) || [];
-  
-  console.log("Content diversity data:", {
-    snapshotPosts: snapshotPosts.length,
-    changelogPosts: posts.length
-  });
-  
-  console.log("Sample snapshot post:", snapshotPosts[0]);
-  console.log("Sample changelog post:", posts[0]);
-  
-  const totalPosts = posts.length + snapshotPosts.length;
-  if (totalPosts === 0) return 0;
-  
-  const contentTypes = {
-    text: 0,
-    image: 0,
-    video: 0,
-    article: 0,
-    external: 0
-  };
-  
-  // Process changelog posts
   posts.forEach(post => {
     const content = post.activity?.specificContent?.["com.linkedin.ugc.ShareContent"];
-    const media = content?.media;
-    
-    if (media && media.length > 0) {
-      const mediaType = media[0].mediaType || "IMAGE";
-      if (mediaType.includes("VIDEO")) {
-        contentTypes.video++;
-      } else {
-        contentTypes.image++;
-      }
-    } else {
-      contentTypes.text++;
-    }
+    const mediaCategory = content?.shareMediaCategory || "NONE";
+    mediaTypes.add(mediaCategory);
   });
-  
-  // Process snapshot posts
-  snapshotPosts.forEach(post => {
-    const mediaType = post["Media Type"] || post.mediaType || post.MediaType || "TEXT";
-    if (mediaType === "VIDEO") {
-      contentTypes.video++;
-    } else if (mediaType === "IMAGE") {
-      contentTypes.image++;
-    } else if (mediaType === "ARTICLE") {
-      contentTypes.article++;
-    } else if (post["Shared URL"] || post.sharedUrl || post.SharedUrl) {
-      contentTypes.external++;
-    } else {
-      contentTypes.text++;
-    }
-  });
-  
-  const typeCount = Object.values(contentTypes).filter(count => count > 0).length;
-  const score = Math.min(typeCount * 2.5, 10);
-  
-  console.log("Content types breakdown:", contentTypes);
-  console.log(`Content diversity score: ${score}/10 (${typeCount} unique types)`);
-  
-  return Math.round(score);
+
+  const typeCount = mediaTypes.size;
+  if (typeCount >= 4) return 10;
+  if (typeCount === 3) return 8;
+  if (typeCount === 2) return 6;
+  if (typeCount === 1) return 4;
+  return 2;
 }
 
-function calculateEngagementRate(postsData, changelogData, connectionsData) {
-  console.log("=== ENGAGEMENT RATE CALCULATION ===");
-  
-  const posts = changelogData?.elements?.filter(e => 
-    e.resourceName === "ugcPosts" && e.method === "CREATE"
-  ) || [];
-  
-  const likes = changelogData?.elements?.filter(e => 
-    e.resourceName === "socialActions/likes" && e.method === "CREATE"
-  ) || [];
-  
-  const comments = changelogData?.elements?.filter(e => 
-    e.resourceName === "socialActions/comments" && e.method === "CREATE"
-  ) || [];
-  
-  const totalConnections = connectionsData?.elements?.[0]?.snapshotData?.length || 1;
-  const totalEngagement = likes.length + comments.length;
-  
-  console.log("Engagement rate calculation:", {
-    posts: posts.length,
-    likes: likes.length,
-    comments: comments.length,
-    totalConnections,
-    totalEngagement
-  });
-  
-  if (posts.length === 0) return 0;
-  
-  const engagementRate = (totalEngagement / posts.length / totalConnections) * 100;
-  
-  let score = 0;
-  if (engagementRate >= 5) score = 10;
-  else if (engagementRate >= 3) score = 8;
-  else if (engagementRate >= 2) score = 6;
-  else if (engagementRate >= 1) score = 4;
-  else if (engagementRate >= 0.5) score = 2;
-  else score = 0;
-  
-  console.log(`Engagement rate score: ${score}/10 (rate: ${engagementRate.toFixed(2)}%)`);
-  return score;
+function calculateEngagementRateScore(engagementRate) {
+  if (engagementRate >= 15) return 10;
+  if (engagementRate >= 10) return 8;
+  if (engagementRate >= 5) return 6;
+  if (engagementRate > 0) return 4;
+  return 2;
 }
 
-function calculateMutualInteractions(changelogData) {
-  console.log("=== MUTUAL INTERACTIONS CALCULATION ===");
-  
-  const elements = changelogData?.elements || [];
-  console.log("Total elements for mutual interactions:", elements.length);
-  
-  // Comments given by user (from changelog)
-  const myLikes = elements.filter(e => 
-    e.resourceName === "socialActions/likes" && e.method === "CREATE"
-  );
-  const myComments = elements.filter(e => 
-    e.resourceName === "socialActions/comments" && e.method === "CREATE"
-  );
-  
-  const totalInteractions = myLikes.length + myComments.length;
-  
-  console.log("Mutual interactions:", {
-    likes: myLikes.length,
-    comments: myComments.length,
-    total: totalInteractions
+function calculateMutualInteractions(comments) {
+  // Simple heuristic: count unique commenters as proxy for interactions
+  const commenters = new Set();
+  comments.forEach(comment => {
+    if (comment.actor) commenters.add(comment.actor);
   });
-  
-  console.log("Sample like interaction:", myLikes[0]);
-  console.log("Sample comment interaction:", myComments[0]);
-  
-  let score = 0;
-  if (totalInteractions >= 100) score = 10;
-  else if (totalInteractions >= 75) score = 8;
-  else if (totalInteractions >= 50) score = 6;
-  else if (totalInteractions >= 25) score = 4;
-  else if (totalInteractions >= 10) score = 2;
-  else score = 0;
-  
-  console.log(`Mutual interactions score: ${score}/10 (${totalInteractions} interactions)`);
-  return score;
+
+  const uniqueCommenters = commenters.size;
+  if (uniqueCommenters >= 10) return 10;
+  if (uniqueCommenters >= 5) return 7;
+  if (uniqueCommenters > 0) return 5;
+  return 2;
 }
 
-function calculateProfileVisibility(profileData) {
-  console.log("=== PROFILE VISIBILITY CALCULATION ===");
-  
-  const profileSnapshot = profileData?.elements?.[0]?.snapshotData || [];
-  console.log("Profile snapshot for visibility:", profileSnapshot.length);
-  console.log("Sample profile data:", profileSnapshot[0]);
-  
-  const profile = profileSnapshot.find(p => 
-    p["Profile Views"] || p["Search Appearances"] || p.profileViews || p.searchAppearances
-  ) || profileSnapshot[0] || {};
-  
-  console.log("Profile visibility data:", profile);
-  console.log("Profile visibility keys:", Object.keys(profile));
-  
+function calculateProfileVisibility(profileSnapshot) {
+  if (!profileSnapshot?.elements?.[0]?.snapshotData) return null;
+
+  const profile = profileSnapshot.elements[0].snapshotData[0] || {};
+  const views = parseInt(profile["Profile Views"] || profile.profileViews || "0");
+  const searches = parseInt(profile["Search Appearances"] || profile.searchAppearances || "0");
+
+  if (views === 0 && searches === 0) return null;
+
+  const totalVisibility = views + searches;
+  if (totalVisibility >= 1000) return 10;
+  if (totalVisibility >= 500) return 8;
+  if (totalVisibility >= 100) return 6;
+  if (totalVisibility > 0) return 4;
+  return 2;
+}
+
+function calculateProfessionalBrand(profileSnapshot) {
+  if (!profileSnapshot?.elements?.[0]?.snapshotData) return 5;
+
+  const profile = profileSnapshot.elements[0].snapshotData[0] || {};
   let score = 0;
-  
-  // Profile views (if available)
-  const profileViews = parseInt(profile["Profile Views"] || profile.profileViews || "0");
-  console.log("Profile views:", profileViews);
-  
-  if (profileViews >= 1000) score += 4;
-  else if (profileViews >= 500) score += 3;
-  else if (profileViews >= 100) score += 2;
-  else if (profileViews >= 50) score += 1;
-  
-  // Search appearances (if available)
-  const searchAppearances = parseInt(profile["Search Appearances"] || profile.searchAppearances || "0");
-  console.log("Search appearances:", searchAppearances);
-  
-  if (searchAppearances >= 100) score += 3;
-  else if (searchAppearances >= 50) score += 2;
-  else if (searchAppearances >= 10) score += 1;
-  
-  // Profile completeness indicators
-  if ((profile.Headline || profile.headline) && (profile.Headline || profile.headline).length > 50) score += 1;
-  if (profile.Industry || profile.industry) score += 1;
-  if (profile.Location || profile.location) score += 1;
-  
-  console.log(`Profile visibility score: ${score}/10`);
-  
+
+  // Check professional indicators
+  if (profile["Headline"] || profile.headline) score += 3;
+  if (profile["Industry"] || profile.industry) score += 2;
+  if (profile["Summary"] || profile.summary) score += 2;
+  if (profile["Current Position"] || profile.currentPosition) score += 3;
+
   return Math.min(score, 10);
 }
 
-function calculateProfessionalBrand(data) {
-  console.log("=== PROFESSIONAL BRAND CALCULATION ===");
+function calculateOverallScore(scores) {
+  const validScores = Object.values(scores).filter(score => score !== null && score !== undefined);
+  if (validScores.length === 0) return 0;
   
-  const { profileData, postsData, positionsData } = data;
-  const profileSnapshot = profileData?.elements?.[0]?.snapshotData || [];
-  const profile = profileSnapshot.find(p => 
-    p["First Name"] || p["Last Name"] || p.firstName || p.lastName || 
-    p.headline || p.Headline || p.industry || p.Industry
-  ) || profileSnapshot[0] || {};
-  
-  console.log("Professional brand profile data:", profile);
-  console.log("Professional brand data analysis:", {
-    hasHeadline: !!(profile.Headline || profile.headline),
-    hasIndustry: !!(profile.Industry || profile.industry),
-    positionsCount: positionsData?.elements?.[0]?.snapshotData?.length || 0
-  });
-  
-  let score = 0;
-  
-  // Professional headline
-  const headline = profile.Headline || profile.headline || "";
-  if (headline && headline.length > 20) {
-    score += 2;
-    console.log("Found professional headline, +2 points");
-  }
-  
-  // Industry specified
-  if (profile.Industry || profile.industry) {
-    score += 2;
-    console.log("Found industry, +2 points");
-  }
-  
-  // Work experience
-  const positions = positionsData?.elements?.[0]?.snapshotData || [];
-  console.log("Positions found:", positions.length);
-  console.log("Sample position:", positions[0]);
-  
-  if (positions.length >= 3) {
-    score += 2;
-    console.log("Found 3+ positions, +2 points");
-  } else if (positions.length >= 1) {
-    score += 1;
-    console.log("Found 1+ positions, +1 point");
-  }
-  
-  // Current position
-  const currentPosition = positions.find(pos => 
-    pos["End Date"] === null || !pos["End Date"] || pos.endDate === null || !pos.endDate
-  );
-  if (currentPosition) {
-    score += 2;
-    console.log("Found current position, +2 points");
-  }
-  
-  // Professional posting (check for business-related content)
-  const posts = postsData?.elements?.[0]?.snapshotData || [];
-  const professionalPosts = posts.filter(post => {
-    const content = post.ShareCommentary || post.shareCommentary || post.commentary || "";
-    return content.includes("business") || content.includes("professional") || 
-           content.includes("industry") || content.includes("career");
-  });
-  
-  if (posts.length > 0 && professionalPosts.length / posts.length >= 0.5) {
-    score += 2;
-    console.log("Found professional content, +2 points");
-  }
-  
-  console.log(`Professional brand score: ${score}/10`);
-  
-  return Math.min(score, 10);
+  const sum = validScores.reduce((acc, score) => acc + score, 0);
+  return Math.round((sum / validScores.length) * 10) / 10;
 }
 
-function calculateSummaryKPIs(data) {
-  const { connectionsData, postsData, changelogData } = data;
-  
-  const totalConnections = connectionsData?.elements?.[0]?.snapshotData?.length || 0;
-  
-  const last30Days = Date.now() - (30 * 24 * 60 * 60 * 1000);
-  
-  // Posts last 30 days
-  const recentPosts = changelogData?.elements?.filter(e => 
-    e.resourceName === "ugcPosts" && 
-    e.method === "CREATE" && 
-    e.capturedAt >= last30Days
-  ) || [];
-  
-  // If no recent posts in changelog, estimate from snapshot
-  const snapshotPosts = postsData?.elements?.[0]?.snapshotData || [];
-  const postsLast30Days = recentPosts.length > 0 ? recentPosts.length : Math.min(snapshotPosts.length, 5);
-  
-  // Connections added last 30 days
-  const connections = connectionsData?.elements?.[0]?.snapshotData || [];
-  const recentConnections = connections.filter(conn => {
-    const connectedDate = new Date(conn["Connected On"] || conn.connectedOn || conn.date || conn.Date);
-    return connectedDate.getTime() >= last30Days;
-  });
-  
-  // Add invitations from changelog
-  const recentInvitations = changelogData?.elements?.filter(e => 
-    e.resourceName === "invitations" && 
-    e.method === "CREATE" && 
-    e.capturedAt >= last30Days
-  ) || [];
-  
-  // Engagement rate
-  const likes = changelogData?.elements?.filter(e => 
-    e.resourceName === "socialActions/likes" && e.method === "CREATE"
-  ) || [];
-  const comments = changelogData?.elements?.filter(e => 
-    e.resourceName === "socialActions/comments" && e.method === "CREATE"
-  ) || [];
-  
-  const totalEngagement = likes.length + comments.length;
-  const engagementRate = postsLast30Days > 0 ? 
-    ((totalEngagement / postsLast30Days) * 100).toFixed(1) : "0";
-  
-  const kpis = {
-    totalConnections,
-    postsLast30Days,
-    engagementRate: `${engagementRate}%`,
-    connectionsLast30Days: recentConnections.length + recentInvitations.length
-  };
-  return kpis;
-}
+function calculateSummary({ posts, likes, comments, invitations, connectionsSnapshot }) {
+  const totalConnections = connectionsSnapshot?.elements?.[0]?.snapshotData?.length || 0;
+  const posts30d = posts.length;
+  const totalEngagements = likes.length + comments.length;
+  const engagementRatePct = posts30d > 0 ? Math.round((totalEngagements / posts30d) * 100) / 100 : 0;
+  const newConnections28d = invitations.length;
 
-function calculateMiniTrends(changelogData) {
-  const elements = changelogData?.elements || [];
-  
-  // Get last 7 days of data
-  const last7Days = [];
-  for (let i = 6; i >= 0; i--) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
-    last7Days.push({
-      date: date.toISOString().split('T')[0], // Use ISO date format
-      posts: 0,
-      engagements: 0
-    });
-  }
-  
-  // Count posts and engagements by day
-  elements.forEach(element => {
-    const elementDate = new Date(element.capturedAt).toISOString().split('T')[0];
-    const dayData = last7Days.find(day => day.date === elementDate);
-    
-    if (dayData) {
-      if (element.resourceName === "ugcPosts" && element.method === "CREATE") {
-        dayData.posts++;
-      } else if (
-        (element.resourceName === "socialActions/likes" || 
-         element.resourceName === "socialActions/comments") && 
-        element.method === "CREATE"
-      ) {
-        dayData.engagements++;
-      }
-    }
-  });
-  
-  const trends = {
-    posts: last7Days.map((day, index) => ({ 
-      date: `Day ${index + 1}`, 
-      value: day.posts 
-    })),
-    engagements: last7Days.map((day, index) => ({ 
-      date: `Day ${index + 1}`, 
-      value: day.engagements 
-    }))
-  };
-  return trends;
-}
-
-function getScoreExplanations() {
   return {
-    profileCompleteness: "Profile completeness based on filled fields (headline, skills, experience, education)",
-    postingActivity: "Posting frequency in the last 30 days from LinkedIn changelog",
-    engagementQuality: "Average engagement (likes + comments) received per post",
-    networkGrowth: "New connections and invitations in the last 30 days",
-    audienceRelevance: "Industry diversity and professional connection quality",
-    contentDiversity: "Variety in content types (text, images, videos, articles)",
-    engagementRate: "Total engagement relative to your network size",
-    mutualInteractions: "Engagement you give to others (likes, comments)",
-    profileVisibility: "Profile views and search appearances from LinkedIn",
-    professionalBrand: "Professional signals (headline, industry, current role)"
+    totalConnections,
+    posts30d,
+    engagementRatePct,
+    newConnections28d
+  };
+}
+
+function calculateTrends(changelogEvents) {
+  const weeklyData = {};
+  
+  changelogEvents.forEach(event => {
+    const date = new Date(event.capturedAt);
+    const year = date.getFullYear();
+    const week = getWeekNumber(date);
+    const weekKey = `${year}-W${week.toString().padStart(2, '0')}`;
+    
+    if (!weeklyData[weekKey]) {
+      weeklyData[weekKey] = { posts: 0, engagements: 0 };
+    }
+    
+    if (event.resourceName === "ugcPosts" && (event.method === "CREATE" || event.method === "UPDATE")) {
+      weeklyData[weekKey].posts++;
+    } else if ((event.resourceName === "socialActions/likes" || event.resourceName === "socialActions/comments") && event.method === "CREATE") {
+      weeklyData[weekKey].engagements++;
+    }
+  });
+
+  return {
+    weeklyPosts: Object.fromEntries(Object.entries(weeklyData).map(([week, data]) => [week, data.posts])),
+    weeklyEngagements: Object.fromEntries(Object.entries(weeklyData).map(([week, data]) => [week, data.engagements]))
+  };
+}
+
+function calculateContentTypes(posts) {
+  const types = {};
+  
+  posts.forEach(post => {
+    const content = post.activity?.specificContent?.["com.linkedin.ugc.ShareContent"];
+    const mediaCategory = content?.shareMediaCategory || "NONE";
+    types[mediaCategory] = (types[mediaCategory] || 0) + 1;
+  });
+
+  return { types };
+}
+
+function getWeekNumber(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
+
+function getExplanations() {
+  return {
+    profileCompleteness: "Computed from Snapshot PROFILE fields (photo, headline, about, experience, skills, recommendations). Scoring: Complete profile (8+ fields) → 10/10; Good (6-7) → 7/10; Basic (4-5) → 5/10; Minimal → 2/10.",
+    postingActivity: "Number of posts created/updated in the last 28 days (Changelog ugcPosts). Scoring: ≥8 posts → 10/10; 4-7 → 7/10; 1-3 → 5/10; 0 → 2/10.",
+    engagementQuality: "Average (likes + comments) per post over last 28 days. Scoring: ≥10 avg → 10/10; 5-9 → 7/10; 1-4 → 5/10; 0 → 2/10.",
+    networkGrowth: "Count of invitations activity in last 28 days; when accept status can be inferred, counts accepted. Scoring: ≥20 → 10/10; 10-19 → 7/10; 1-9 → 5/10; 0 → 2/10.",
+    audienceRelevance: "Industry diversity of your connections (Snapshot CONNECTIONS). Scoring: High diversity (80%+) → 10/10; Good (60-79%) → 8/10; Moderate (40-59%) → 6/10; Low → 2/10.",
+    contentDiversity: "Count of distinct shareMediaCategory types used in posts over last 28 days. Scoring: ≥4 types → 10/10; 3 → 8/10; 2 → 6/10; 1 → 4/10; 0 → 2/10.",
+    engagementRate: "Total engagements divided by posts, expressed as percentage. Scoring: ≥15% → 10/10; 10-14% → 8/10; 5-9% → 6/10; 1-4% → 4/10; 0% → 2/10.",
+    mutualInteractions: "Number of unique members you've exchanged comments with over last 28 days. Scoring: ≥10 → 10/10; 5-9 → 7/10; 1-4 → 5/10; 0 → 2/10.",
+    profileVisibility: "If available in Snapshot domains: search appearances/impressions mapped to bands. Scoring: ≥1000 → 10/10; 500-999 → 8/10; 100-499 → 6/10; 1-99 → 4/10; 0 → 2/10. This uses Snapshot domain data (point-in-time).",
+    professionalBrand: "Professional indicators from Snapshot PROFILE (headline, industry, summary, current position). Scoring: All indicators → 10/10; Most → 7/10; Some → 5/10; Few → 2/10. This uses Snapshot domain data (point-in-time)."
   };
 }

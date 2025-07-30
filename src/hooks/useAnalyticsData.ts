@@ -72,25 +72,24 @@ export const useAnalyticsData = (timeRange: '7d' | '30d' | '90d' = '30d') => {
   return useQuery({
     queryKey: ['analytics-data', timeRange],
     queryFn: async (): Promise<AnalyticsData> => {
-      console.log('Fetching analytics data with token:', dmaToken ? 'present' : 'missing', 'timeRange:', timeRange);
-      
-      const response = await fetch(`/.netlify/functions/analytics-data?timeRange=${timeRange}`, {
+      const response = await fetch(`/api/analytics-data?timeRange=${timeRange}`, {
         headers: {
           'Authorization': `Bearer ${dmaToken}`,
           'Content-Type': 'application/json',
         },
       });
 
-      console.log('Analytics API response status:', response.status);
-      
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Analytics API error:', response.status, errorText);
         throw new Error('Failed to fetch analytics data');
       }
 
       const data = await response.json();
-      console.log('Analytics data received:', data);
+      
+      if (data.error) {
+        throw new Error(data.message || data.error);
+      }
+      
       return data;
     },
     enabled: !!dmaToken,
