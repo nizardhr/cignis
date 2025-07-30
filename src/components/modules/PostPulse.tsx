@@ -192,7 +192,7 @@ export const PostPulse = () => {
         <div>
           <h2 className="text-2xl font-bold">PostPulse</h2>
           <p className="text-gray-600 mt-1">
-            Your LinkedIn posts from the last {timeFilter} • {pagination.totalPosts} posts found • Source: {metadata.dataSource}
+            Your LinkedIn posts from the last {timeFilter} • {pagination.totalPosts} posts found • Source: {metadata.dataSource} • Total shares: {metadata.totalSharesFound || 'N/A'}
           </p>
         </div>
         <div className="flex space-x-3">
