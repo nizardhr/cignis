@@ -16,6 +16,9 @@ import {
   Database,
   AlertCircle,
   Image as ImageIcon,
+  ImageOff,
+  Video,
+  FileText,
 } from "lucide-react";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
@@ -63,63 +66,36 @@ export const PostPulse = () => {
     });
   };
 
-  // Add a function to test the media download and log the actual error
-  const testMediaDownload = async (assetId: string) => {
-    try {
-      const response = await fetch(
-        `/.netlify/functions/linkedin-media-download?assetId=${assetId}&token=${encodeURIComponent(dmaToken!)}`
-      );
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.log(`Media download test failed for ${assetId}:`, {
-          status: response.status,
-          statusText: response.statusText,
-          errorBody: errorText
-        });
-        return { success: false, error: errorText };
-      }
-      
-      console.log(`Media download test succeeded for ${assetId}`);
-      return { success: true };
-    } catch (error) {
-      console.log(`Media download test error for ${assetId}:`, error);
-      return { success: false, error: error.message };
+  const getThumbnailUrl = (post: ProcessedPost): string | null => {
+    // Don't show thumbnail if there was a previous load error
+    if (imageLoadErrors.has(post.id)) {
+      return null;
     }
+    
+    // Use existing thumbnail URL if available
+    if (post.thumbnail) {
+      return post.thumbnail;
+    }
+
+    // Generate thumbnail URL for LinkedIn assets with DMA token
+    if (post.mediaAssetId && dmaToken) {
+      return `/.netlify/functions/linkedin-media-download?assetId=${post.mediaAssetId}&token=${encodeURIComponent(dmaToken)}`;
+    }
+    
+    return null;
   };
 
-  const getThumbnailUrl = (post: ProcessedPost): string | null => {
-    console.log("Getting thumbnail URL for post:", post.id, {
-      mediaAssetId: post.mediaAssetId,
-      thumbnail: post.thumbnail,
-      media: post.media,
-      mediaType: post.mediaType,
-      hasError: imageLoadErrors.has(post.id),
-      mediaStatus: post.media?.status
-    });
-    
-    if (imageLoadErrors.has(post.id)) {
-      console.log("Post has image load error, returning null");
-      return null;
+  const getMediaIcon = (mediaType: string) => {
+    switch (mediaType) {
+      case "IMAGE":
+        return <ImageIcon size={24} className="text-gray-400" />;
+      case "VIDEO":
+        return <Video size={24} className="text-gray-400" />;
+      case "ARTICLE":
+        return <FileText size={24} className="text-gray-400" />;
+      default:
+        return <ImageOff size={24} className="text-gray-400" />;
     }
-    
-    // Check if media is READY before attempting download
-    if (post.media?.status && post.media.status !== "READY") {
-      console.log("Media not READY, status:", post.media.status);
-      return null;
-    }
-    
-    if (post.mediaAssetId && dmaToken) {
-      // Use our media download function for LinkedIn assets with token
-      const url = `/.netlify/functions/linkedin-media-download?assetId=${post.mediaAssetId}&token=${encodeURIComponent(dmaToken)}`;
-      console.log("Generated media download URL:", url);
-      return url;
-    }
-    
-    // Fallback to direct URL if available
-    const fallbackUrl = post.thumbnail || null;
-    console.log("Using fallback thumbnail URL:", fallbackUrl);
-    return fallbackUrl;
   };
   const handleRefresh = () => {
     PostPulseCache.clearCache();
@@ -317,20 +293,6 @@ export const PostPulse = () => {
                 .map(([k]) => k)
                 .join(", ")}
             </div>
-            <div className="mt-4">
-              <h4 className="font-semibold">Test Media Download:</h4>
-              {posts.slice(0, 3).map(post => (
-                <div key={post.id} className="mt-2">
-                  <button
-                    onClick={() => testMediaDownload(post.mediaAssetId!)}
-                    className="text-blue-600 hover:text-blue-800 text-xs"
-                    disabled={!post.mediaAssetId}
-                  >
-                    Test {post.mediaAssetId?.substring(0, 8)}...
-                  </button>
-                </div>
-              ))}
-            </div>
           </div>
         </Card>
       )}
@@ -396,6 +358,7 @@ export const PostPulse = () => {
             {posts.map((post, index) => {
               const status = getPostStatus(post);
               const StatusIcon = status.icon;
+              const thumbnailUrl = getThumbnailUrl(post);
 
               return (
                 <motion.div
@@ -435,55 +398,37 @@ export const PostPulse = () => {
                       <span>{status.label}</span>
                     </div>
 
-                    {/* Thumbnail if available */}
-                    {(() => {
-                      const thumbnailUrl = getThumbnailUrl(post);
-                      console.log("Rendering thumbnail for post:", post.id, "URL:", thumbnailUrl);
-                      return thumbnailUrl && (
-                      <div className="w-full h-32 bg-gradient-to-br from-blue-100 to-purple-100 rounded-lg mb-3 flex items-center justify-center overflow-hidden">
-                        <img
-                          src={thumbnailUrl}
-                          alt="Post thumbnail"
-                          className="w-full h-full object-cover"
-                          onError={(e) => {
-                            console.log("Image load error for post:", post.id, "URL:", thumbnailUrl);
-                            handleImageError(post.id);
-                          }}
-                          onLoad={() => {
-                            console.log("Image loaded successfully for post:", post.id);
-                          }}
-                          loading="lazy"
-                        />
-                      </div>
-                      );
-                    })()}
+                    {/* Post Content with Thumbnail */}
+                    <div className="mt-12 mb-4">
+                      <div className="flex space-x-4">
+                        {/* Thumbnail Section */}
+                        <div className="flex-shrink-0">
+                          {thumbnailUrl ? (
+                            <div className="w-24 h-24 bg-gray-100 rounded-lg overflow-hidden">
+                              <img
+                                src={thumbnailUrl}
+                                alt="Post thumbnail"
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                                onError={() => handleImageError(post.id)}
+                              />
+                            </div>
+                          ) : post.mediaType !== "TEXT" ? (
+                            <div className="w-24 h-24 bg-gray-100 rounded-lg flex items-center justify-center">
+                              {getMediaIcon(post.mediaType)}
+                            </div>
+                          ) : null}
+                        </div>
 
-                    {/* Media Type Indicator */}
-                    {post.mediaType !== "TEXT" && !getThumbnailUrl(post) && (
-                      <div className="w-full h-32 bg-gradient-to-br from-blue-100 to-purple-100 rounded-lg mb-3 flex items-center justify-center">
-                        <div className="text-center">
-                          <ImageIcon
-                            size={24}
-                            className="mx-auto text-gray-600 mb-2"
-                          />
-                          <span className="text-sm text-gray-600">
-                            {post.mediaType} Content
-                            {post.mediaAssetId && (
-                              <div className="text-xs text-gray-500 mt-1">
-                                Asset: {post.mediaAssetId.substring(0, 8)}...
-                              </div>
-                            )}
-                          </span>
+                        {/* Post Text */}
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-4">
+                            {truncateText(post.text)}
+                          </p>
                         </div>
                       </div>
-                    )}
-
-                    {/* Post Content Preview */}
-                    <div className="mb-4">
-                      <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-4">
-                        {truncateText(post.text)}
-                      </p>
                     </div>
+
 
                     {/* Post Date */}
                     <p className="text-xs text-gray-500 mb-3">

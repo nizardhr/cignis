@@ -75,28 +75,8 @@ export class PostPulseProcessor {
               }
             }
 
-            // Extract media information - Historical posts don't have asset URNs
-            // We'll rely on MediaUrl if available, but won't have downloadable assets
-            let media = undefined;
-            let thumbnail = null;
-            let mediaAssetId = null;
-            
-            console.log("Checking for media in historical post:", {
-              MediaUrl: share.MediaUrl,
-              MediaType: share.MediaType,
-              allKeys: Object.keys(share)
-            });
-            
-            if (share.MediaUrl) {
-              media = { url: share.MediaUrl };
-              thumbnail = share.MediaUrl;
-              console.log("Found MediaUrl:", share.MediaUrl);
-            } else if (share.MediaType && share.MediaType !== "TEXT") {
-              // Historical posts may not have direct media URLs
-              // We'll show a media type indicator instead
-              media = { type: share.MediaType };
-              console.log("Found MediaType without URL:", share.MediaType);
-            }
+            // Extract media information from historical posts
+            const { media, thumbnail, mediaAssetId } = this.extractMediaFromHistoricalPost(share);
 
             posts.push({
               id: postId,
@@ -184,15 +164,9 @@ export class PostPulseProcessor {
       }
     });
 
-    // Process UGC posts - only include posts created by the current user
+    // Process UGC posts - filter for person posts only and exclude deleted
     const postEvents = data.elements.filter((e) => {
-      return e.resourceName === "ugcPosts" && 
-             e.method === "CREATE" &&
-             e.owner === e.actor && // Only posts where the user is the actor (creator)
-             (!currentUserId || e.owner === currentUserId) && // Ensure it's the current user's post
-             // Only include posts where the author is a person, not a company
-             (e.activity?.author?.startsWith?.("urn:li:person:") || 
-              typeof e.activity?.author === "string" && e.activity.author.includes("person"));
+      return this.isValidPersonPost(e, currentUserId);
     });
 
     console.log(`Found ${postEvents.length} user posts out of ${data.elements.length} total events`);
@@ -233,77 +207,12 @@ export class PostPulseProcessor {
           shares: 0,
         };
 
-        // Extract media information from the post using LinkedIn's media structure
-        let media = null;
-        let thumbnail = null;
-        let mediaType = "TEXT";
-        let mediaAssetId = null;
-        
-        console.log("=== MEDIA EXTRACTION ===");
-        
-        const mediaArray = processedContent?.media || activityContent?.media;
-        console.log("Media array found:", JSON.stringify(mediaArray, null, 2));
-        
-        if (mediaArray && mediaArray.length > 0) {
-          const firstMedia = mediaArray[0];
-          console.log("Processing media for post:", postId, firstMedia);
-          
-          // Extract the digital media asset URN
-          const mediaUrn = firstMedia?.media;
-          console.log("Media URN:", mediaUrn);
-          
-          if (mediaUrn && typeof mediaUrn === 'string') {
-            // Extract asset ID from URN like "urn:li:digitalmediaAsset:C5606AQF245TuEXNVXA"
-            const assetMatch = mediaUrn.match(/urn:li:digitalmediaAsset:(.+)/);
-            console.log("Asset match result:", assetMatch);
-            
-            if (assetMatch) {
-              mediaAssetId = assetMatch[1];
-              console.log("Extracted media asset ID:", mediaAssetId);
-              
-              // Only set thumbnail if status is READY
-              if (firstMedia?.status === "READY") {
-                thumbnail = `/.netlify/functions/linkedin-media-download?assetId=${mediaAssetId}`;
-                console.log("Asset is READY, generated thumbnail URL:", thumbnail);
-              } else {
-                console.log("Asset not READY, status:", firstMedia?.status);
-              }
-              media = { 
-                urn: mediaUrn, 
-                assetId: mediaAssetId,
-                status: firstMedia?.status || "READY"
-              };
-              mediaType = firstMedia?.mediaType || "IMAGE";
-            }
-          }
-          
-          // Fallback: try to extract direct URLs if available
-          if (!mediaAssetId) {
-            console.log("No asset ID found, looking for direct URLs...");
-            const mediaUrl = firstMedia?.media?.downloadUrl ||
-                             firstMedia?.media?.url ||
-                             firstMedia?.downloadUrl ||
-                             firstMedia?.url;
-            
-            console.log("Found direct media URL:", mediaUrl);
-            
-            if (mediaUrl) {
-              media = { url: mediaUrl };
-              thumbnail = mediaUrl;
-              mediaType = firstMedia?.mediaType || "IMAGE";
-              console.log("Using direct URL as thumbnail:", mediaUrl);
-            }
-          }
-        } else {
-          console.log("No media array found in post");
-        }
-
-        console.log("Final media extraction result:", {
-          media,
-          thumbnail,
-          mediaType,
-          mediaAssetId
-        });
+        // Extract media information from the post
+        const { media, thumbnail, mediaType, mediaAssetId } = this.extractMediaFromChangelogPost(
+          processedContent,
+          activityContent,
+          postId
+        );
 
         posts.push({
           id: postId,
@@ -337,6 +246,203 @@ export class PostPulseProcessor {
     );
     
     return uniquePosts.sort((a, b) => b.timestamp - a.timestamp);
+  }
+
+  // Helper method to validate person posts and exclude deleted ones
+  private static isValidPersonPost(event: any, currentUserId?: string): boolean {
+    // Must be a ugcPost
+    if (event.resourceName !== "ugcPosts") return false;
+
+    // Exclude DELETE method (deleted objects don't carry content per PDF)
+    if (event.method === "DELETE") {
+      console.log("Excluding DELETE post:", event.resourceId);
+      return false;
+    }
+
+    // Check for deleted lifecycle state
+    const lifecycleState = event.processedActivity?.lifecycleState || event.activity?.lifecycleState;
+    if (lifecycleState === "DELETED" || lifecycleState === "REMOVED") {
+      console.log("Excluding deleted lifecycle post:", event.resourceId);
+      return false;
+    }
+
+    // Require author to be a person (urn:li:person:), not organization
+    const author = event.processedActivity?.author || event.activity?.author || event.owner;
+    const isPersonPost = author && typeof author === 'string' && author.startsWith('urn:li:person:');
+    
+    if (!isPersonPost) {
+      console.log("Excluding non-person post:", event.resourceId, "author:", author);
+      return false;
+    }
+
+    // Only posts where the user is the actor (creator)
+    if (event.owner !== event.actor) {
+      console.log("Excluding post where user is not the actor:", event.resourceId);
+      return false;
+    }
+
+    // Ensure it's the current user's post if we have the user ID
+    if (currentUserId && event.owner !== currentUserId) {
+      console.log("Excluding post from different user:", event.resourceId);
+      return false;
+    }
+
+    console.log("Including person post:", event.resourceId, "author:", author);
+    return true;
+  }
+
+  // Helper method to extract media from historical posts
+  private static extractMediaFromHistoricalPost(share: any): {
+    media: any;
+    thumbnail: string | null;
+    mediaAssetId: string | null;
+  } {
+    let media = undefined;
+    let thumbnail = null;
+    let mediaAssetId = null;
+    
+    console.log("Checking for media in historical post:", {
+      MediaUrl: share.MediaUrl,
+      MediaType: share.MediaType,
+      allKeys: Object.keys(share)
+    });
+    
+    // Historical posts may have MediaUrl for direct access
+    if (share.MediaUrl && share.MediaUrl.trim()) {
+      media = { url: share.MediaUrl };
+      thumbnail = share.MediaUrl;
+      console.log("Found MediaUrl:", share.MediaUrl);
+    } else if (share.MediaType && share.MediaType !== "TEXT") {
+      // Historical posts may not have direct media URLs
+      // We'll show a media type indicator instead
+      media = { type: share.MediaType };
+      console.log("Found MediaType without URL:", share.MediaType);
+    }
+
+    return { media, thumbnail, mediaAssetId };
+  }
+
+  // Helper method to extract media from changelog posts
+  private static extractMediaFromChangelogPost(
+    processedContent: any,
+    activityContent: any,
+    postId: string
+  ): {
+    media: any;
+    thumbnail: string | null;
+    mediaType: string;
+    mediaAssetId: string | null;
+  } {
+    let media = null;
+    let thumbnail = null;
+    let mediaType = "TEXT";
+    let mediaAssetId = null;
+    
+    console.log("=== MEDIA EXTRACTION ===");
+    
+    const shareMediaCategory = processedContent?.shareMediaCategory || activityContent?.shareMediaCategory;
+    const mediaArray = processedContent?.media || activityContent?.media;
+    
+    console.log("Media extraction for post:", postId, {
+      shareMediaCategory,
+      mediaArrayLength: mediaArray?.length,
+      firstMedia: mediaArray?.[0]
+    });
+    
+    if (mediaArray && mediaArray.length > 0) {
+      const firstMedia = mediaArray[0];
+      console.log("Processing media for post:", postId, firstMedia);
+      
+      // Extract the digital media asset URN
+      const mediaUrn = firstMedia?.media;
+      console.log("Media URN:", mediaUrn);
+      
+      if (mediaUrn && typeof mediaUrn === 'string') {
+        // Extract asset ID from URN like "urn:li:digitalmediaAsset:C5606AQF245TuEXNVXA"
+        const assetMatch = mediaUrn.match(/urn:li:digitalmediaAsset:(.+)/);
+        console.log("Asset match result:", assetMatch);
+        
+        if (assetMatch) {
+          mediaAssetId = assetMatch[1];
+          console.log("Extracted media asset ID:", mediaAssetId);
+          
+          // Only set thumbnail if status is READY
+          if (firstMedia?.status === "READY") {
+            thumbnail = `/.netlify/functions/linkedin-media-download?assetId=${mediaAssetId}`;
+            console.log("Asset is READY, generated thumbnail URL:", thumbnail);
+          } else {
+            console.log("Asset not READY, status:", firstMedia?.status);
+          }
+          media = { 
+            urn: mediaUrn, 
+            assetId: mediaAssetId,
+            status: firstMedia?.status || "READY"
+          };
+          mediaType = this.getMediaTypeFromCategory(shareMediaCategory) || firstMedia?.mediaType || "IMAGE";
+        }
+      }
+      
+      // Fallback: try to extract direct URLs if available
+      if (!mediaAssetId) {
+        console.log("No asset ID found, looking for direct URLs...");
+        const mediaUrl = firstMedia?.media?.downloadUrl ||
+                         firstMedia?.media?.url ||
+                         firstMedia?.downloadUrl ||
+                         firstMedia?.url;
+        
+        console.log("Found direct media URL:", mediaUrl);
+        
+        if (mediaUrl) {
+          media = { url: mediaUrl };
+          thumbnail = mediaUrl;
+          mediaType = this.getMediaTypeFromCategory(shareMediaCategory) || firstMedia?.mediaType || "IMAGE";
+          console.log("Using direct URL as thumbnail:", mediaUrl);
+        }
+      }
+    }
+
+    // Handle ARTICLE type posts - look for article thumbnails
+    if (shareMediaCategory === "ARTICLE" && !thumbnail) {
+      const contentEntities = processedContent?.contentEntities || activityContent?.contentEntities;
+      if (contentEntities && contentEntities.length > 0) {
+        const firstEntity = contentEntities[0];
+        const articleThumbnail = firstEntity?.thumbnails?.[0]?.imageSpecificContent?.media ||
+                                firstEntity?.thumbnails?.[0]?.imageUrl;
+        
+        if (articleThumbnail) {
+          thumbnail = articleThumbnail;
+          media = { url: articleThumbnail, type: "ARTICLE" };
+          mediaType = "ARTICLE";
+          console.log("Found article thumbnail:", articleThumbnail);
+        }
+      }
+    }
+
+    console.log("Final media extraction result:", {
+      media,
+      thumbnail,
+      mediaType,
+      mediaAssetId
+    });
+
+    return { media, thumbnail, mediaType, mediaAssetId };
+  }
+
+  // Helper method to map shareMediaCategory to mediaType
+  private static getMediaTypeFromCategory(category: string): string {
+    switch (category) {
+      case "IMAGE":
+        return "IMAGE";
+      case "VIDEO":
+        return "VIDEO";
+      case "ARTICLE":
+        return "ARTICLE";
+      case "URN_REFERENCE":
+        return "URN_REFERENCE";
+      case "NONE":
+      default:
+        return "TEXT";
+    }
   }
 
   static mergeAndDeduplicatePosts(
