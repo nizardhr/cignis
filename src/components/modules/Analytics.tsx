@@ -626,7 +626,6 @@ export const Analytics = () => {
         </div>
         </div>
       </Card>
-      </div>
 
       {/* Score Improvement Tips */}
       <Card variant="glass" className="p-8 bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200">
