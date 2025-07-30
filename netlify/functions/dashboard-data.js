@@ -172,6 +172,9 @@ export async function handler(event, context) {
     const processingTime = Date.now() - processingStartTime;
     console.log(`Dashboard Data: Processing completed in ${processingTime}ms`);
 
+    // Check if we have any activity in the last 28 days from changelog OR recent posts from snapshot
+    const hasRecentActivity = personPosts.length > 0 || (postsSnapshot?.elements?.[0]?.snapshotData?.length > 0);
+
     const result = {
       scores: {
         overall: calculateOverallScore(scores),
@@ -186,7 +189,7 @@ export async function handler(event, context) {
         processingTimeMs: processingTime,
         totalTimeMs: Date.now() - startTime,
         dataSource: changelogEvents.length > 0 ? "changelog" : "snapshot",
-        hasRecentActivity: personPosts.length > 0,
+        hasRecentActivity,
         personPostsCount: personPosts.length,
         totalPostsCount: allPosts.length,
         filteredEngagements: {

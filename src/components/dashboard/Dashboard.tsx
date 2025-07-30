@@ -383,6 +383,135 @@ export const Dashboard = () => {
   );
 };
 
+const ActivityDetectedState = ({ dashboardData, onRefetch, isRefetching, setCurrentModule }) => {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="space-y-6"
+    >
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold">Dashboard</h2>
+          <p className="text-gray-600 mt-1">
+            Showing your LinkedIn profile data • {dashboardData.summary.totalConnections} connections
+          </p>
+        </div>
+        <Button
+          variant="outline"
+          onClick={onRefetch}
+          disabled={isRefetching}
+        >
+          <RefreshCw size={14} className={`mr-1 ${isRefetching ? 'animate-spin' : ''}`} />
+          {isRefetching ? "Refreshing..." : "Refresh"}
+        </Button>
+      </div>
+
+      {/* Profile Evaluation - Main Focus */}
+      <div className="mb-8">
+        <ProfileEvaluationCard 
+          scores={{
+            profileCompleteness: dashboardData.scores.profileCompleteness,
+            postingActivity: dashboardData.scores.postingActivity,
+            engagementQuality: dashboardData.scores.engagementQuality,
+            networkGrowth: dashboardData.scores.networkGrowth,
+            audienceRelevance: dashboardData.scores.audienceRelevance,
+            contentDiversity: dashboardData.scores.contentDiversity,
+            engagementRate: dashboardData.scores.engagementRate,
+            mutualInteractions: dashboardData.scores.mutualInteractions,
+            profileVisibility: dashboardData.scores.profileVisibility,
+            professionalBrand: dashboardData.scores.professionalBrand,
+          }}
+          overallScore={dashboardData.scores.overall}
+          explanations={dashboardData.methodology}
+        />
+      </div>
+
+      {/* Summary KPIs */}
+      <div className="mb-8">
+        <SummaryKPIsCard kpis={{
+          totalConnections: dashboardData.summary.totalConnections,
+          postsLast30Days: dashboardData.summary.posts30d,
+          engagementRate: `${dashboardData.summary.engagementRatePct}%`,
+          connectionsLast30Days: dashboardData.summary.newConnections28d
+        }} />
+      </div>
+
+      {/* Activity Notice */}
+      <Card variant="glass" className="p-8 text-center bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200">
+        <div className="max-w-2xl mx-auto">
+          <div className="w-16 h-16 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-6">
+            <TrendingUp size={24} className="text-white" />
+          </div>
+          <h3 className="text-xl font-bold text-gray-900 mb-4">Ready to Boost Your LinkedIn Presence?</h3>
+          <p className="text-gray-700 mb-6 leading-relaxed">
+            Your profile looks great! Start posting and engaging to unlock detailed analytics and growth insights.
+          </p>
+          
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Button
+                variant="primary"
+                onClick={() => window.open('https://linkedin.com', '_blank')}
+                className="flex items-center justify-center space-x-2"
+              >
+                <ExternalLink size={16} />
+                <span>Post on LinkedIn</span>
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setCurrentModule('postgen')}
+                className="flex items-center justify-center space-x-2"
+              >
+                <Zap size={16} />
+                <span>Generate Content</span>
+              </Button>
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {/* Quick Actions */}
+      <Card variant="glass" className="p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-xl font-bold flex items-center text-gray-900">
+            <Zap className="mr-2" size={20} />
+            Quick Actions
+          </h3>
+          <div className="text-sm text-gray-500">
+            Boost your LinkedIn presence
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="w-full p-4 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl hover:from-indigo-600 hover:to-purple-600 transition-all shadow-lg hover:shadow-xl"
+            onClick={() => setCurrentModule("analytics")}
+          >
+            <div className="flex items-center justify-center space-x-2">
+              <span className="text-2xl">📊</span>
+              <span className="font-semibold">View Profile Analytics</span>
+            </div>
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            className="w-full p-4 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-xl hover:from-green-600 hover:to-emerald-600 transition-all shadow-lg hover:shadow-xl"
+            onClick={() => setCurrentModule("postpulse")}
+          >
+            <div className="flex items-center justify-center space-x-2">
+              <span className="text-2xl">📈</span>
+              <span className="font-semibold">View Your Posts</span>
+            </div>
+          </motion.button>
+        </div>
+      </Card>
+    </motion.div>
+  );
+};
+
 const EmptyActivityState = ({ dashboardData, onRefetch, isRefetching, setCurrentModule }) => {
   return (
     <motion.div
