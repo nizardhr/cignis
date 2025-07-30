@@ -13,18 +13,20 @@ export async function handler(event, context) {
   const { authorization } = event.headers;
 
   if (!authorization) {
-    console.log("Dashboard Data: No authorization header");
+    console.error("Dashboard Data: No authorization header provided");
     return {
       statusCode: 401,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
       body: JSON.stringify({ error: "No authorization token" }),
     };
   }
 
-  // Extract token from Bearer header
-  const token = authorization.replace('Bearer ', '');
-
   try {
-    console.log("Dashboard Data: Starting analysis");
+    console.log("Dashboard Data: Starting comprehensive LinkedIn analysis");
+    const startTime = Date.now();
 
     // Fetch all required data in parallel
     const [
@@ -39,22 +41,28 @@ export async function handler(event, context) {
       fetchLinkedInData(authorization, "linkedin-snapshot", "PROFILE"),
       fetchLinkedInData(authorization, "linkedin-snapshot", "CONNECTIONS"),
       fetchLinkedInData(authorization, "linkedin-snapshot", "MEMBER_SHARE_INFO"),
-      fetchLinkedInData(authorization, "linkedin-changelog", null, "count=100"),
+      fetchLinkedInData(authorization, "linkedin-changelog", null, "count=200"),
       fetchLinkedInData(authorization, "linkedin-snapshot", "SKILLS"),
       fetchLinkedInData(authorization, "linkedin-snapshot", "POSITIONS"),
       fetchLinkedInData(authorization, "linkedin-snapshot", "EDUCATION")
     ]);
 
+    const fetchTime = Date.now() - startTime;
+    console.log(`Dashboard Data: Data fetching completed in ${fetchTime}ms`);
+
     // Log data availability for debugging
-    console.log("Dashboard Data: API data summary:", {
+    console.log("Dashboard Data: Comprehensive data summary:", {
       profile: profileData?.elements?.length || 0,
       connections: connectionsData?.elements?.[0]?.snapshotData?.length || 0,
       posts: postsData?.elements?.[0]?.snapshotData?.length || 0,
       changelog: changelogData?.elements?.length || 0,
       skills: skillsData?.elements?.[0]?.snapshotData?.length || 0,
       positions: positionsData?.elements?.[0]?.snapshotData?.length || 0,
-      education: educationData?.elements?.[0]?.snapshotData?.length || 0
+      education: educationData?.elements?.[0]?.snapshotData?.length || 0,
+      fetchTimeMs: fetchTime
     });
+
+    const processingStartTime = Date.now();
 
     // Calculate profile evaluation scores
     const profileEvaluation = calculateProfileEvaluation({
@@ -77,14 +85,37 @@ export async function handler(event, context) {
     // Calculate mini trends
     const miniTrends = calculateMiniTrends(changelogData);
 
+    const processingTime = Date.now() - processingStartTime;
+    console.log(`Dashboard Data: Processing completed in ${processingTime}ms`);
+
     const result = {
       profileEvaluation,
       summaryKPIs,
       miniTrends,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: new Date().toISOString(),
+      metadata: {
+        fetchTimeMs: fetchTime,
+        processingTimeMs: processingTime,
+        totalTimeMs: Date.now() - startTime,
+        dataQuality: {
+          hasProfile: !!profileData?.elements?.length,
+          hasConnections: !!(connectionsData?.elements?.[0]?.snapshotData?.length),
+          hasPosts: !!(postsData?.elements?.[0]?.snapshotData?.length),
+          hasChangelog: !!(changelogData?.elements?.length),
+          completeness: calculateDataCompleteness({
+            profileData,
+            connectionsData,
+            postsData,
+            changelogData,
+            skillsData,
+            positionsData,
+            educationData
+          })
+        }
+      }
     };
 
-    console.log("Dashboard Data: Analysis complete");
+    console.log("Dashboard Data: Analysis complete with high-quality metrics");
 
     return {
       statusCode: 200,
@@ -107,6 +138,7 @@ export async function handler(event, context) {
       body: JSON.stringify({
         error: "Failed to fetch dashboard data",
         details: error.message,
+        timestamp: new Date().toISOString()
       }),
     };
   }
@@ -114,6 +146,7 @@ export async function handler(event, context) {
 
 async function fetchLinkedInData(authorization, endpoint, domain = null, extraParams = "") {
   try {
+    const startTime = Date.now();
     let url = `/.netlify/functions/${endpoint}`;
     const params = new URLSearchParams();
     
@@ -132,6 +165,8 @@ async function fetchLinkedInData(authorization, endpoint, domain = null, extraPa
       url += `?${params.toString()}`;
     }
 
+    console.log(`Fetching ${endpoint}${domain ? ` (${domain})` : ''}: ${url}`);
+
     const response = await fetch(url, {
       headers: {
         Authorization: authorization,
@@ -139,19 +174,47 @@ async function fetchLinkedInData(authorization, endpoint, domain = null, extraPa
       },
     });
 
+    const fetchTime = Date.now() - startTime;
+
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Failed to fetch ${endpoint} ${domain}: ${response.status} ${response.statusText}`, errorText);
+      const errorText = await response.text().catch(() => 'No error details');
+      console.error(`Failed to fetch ${endpoint} ${domain}: ${response.status} ${response.statusText} (${fetchTime}ms)`, errorText);
       return null;
     }
 
     const data = await response.json();
+    console.log(`Successfully fetched ${endpoint}${domain ? ` (${domain})` : ''} in ${fetchTime}ms`);
     
     return data;
   } catch (error) {
-    console.error(`Error fetching ${endpoint} ${domain}:`, error);
+    console.error(`Network error fetching ${endpoint} ${domain}:`, error.message);
     return null;
   }
+}
+
+function calculateDataCompleteness(data) {
+  const {
+    profileData,
+    connectionsData,
+    postsData,
+    changelogData,
+    skillsData,
+    positionsData,
+    educationData
+  } = data;
+
+  let score = 0;
+  let maxScore = 7;
+
+  if (profileData?.elements?.length) score += 1;
+  if (connectionsData?.elements?.[0]?.snapshotData?.length) score += 1;
+  if (postsData?.elements?.[0]?.snapshotData?.length) score += 1;
+  if (changelogData?.elements?.length) score += 1;
+  if (skillsData?.elements?.[0]?.snapshotData?.length) score += 1;
+  if (positionsData?.elements?.[0]?.snapshotData?.length) score += 1;
+  if (educationData?.elements?.[0]?.snapshotData?.length) score += 1;
+
+  return Math.round((score / maxScore) * 100);
 }
 
 function calculateProfileEvaluation(data) {
@@ -209,6 +272,11 @@ function calculateProfileEvaluation(data) {
   // Calculate overall score
   const overallScore = Object.values(scores).reduce((sum, score) => sum + score, 0) / 10;
 
+  console.log("Profile evaluation scores calculated:", {
+    individual: scores,
+    overall: overallScore
+  });
+
   return {
     scores,
     overallScore: Math.round(overallScore * 10) / 10,
@@ -217,6 +285,8 @@ function calculateProfileEvaluation(data) {
 }
 
 function calculateProfileCompleteness({ profileData, skillsData, positionsData, educationData }) {
+  console.log("=== ENHANCED PROFILE COMPLETENESS CALCULATION ===");
+  
   let score = 0;
   
   // Extract actual data arrays from LinkedIn API response
@@ -225,47 +295,66 @@ function calculateProfileCompleteness({ profileData, skillsData, positionsData, 
   const positionsSnapshot = positionsData?.elements?.[0]?.snapshotData || [];
   const educationSnapshot = educationData?.elements?.[0]?.snapshotData || [];
   
+  console.log("Profile completeness data:", {
+    profileFields: profileSnapshot.length,
+    skills: skillsSnapshot.length,
+    positions: positionsSnapshot.length,
+    education: educationSnapshot.length
+  });
+  
   // LinkedIn profile data might be an array, find the main profile entry
   const profile = profileSnapshot.find(p => 
     p["First Name"] || p["Last Name"] || p.firstName || p.lastName || 
     p.headline || p.Headline || p.industry || p.Industry
   ) || profileSnapshot[0] || {};
   
-  // Basic info (4 points)
+  console.log("Main profile entry:", Object.keys(profile));
+  
+  // Enhanced basic info scoring (4 points)
   if (profile["First Name"] || profile.firstName) {
     score += 1;
+    console.log("✓ First name found");
   }
   if (profile["Last Name"] || profile.lastName) {
     score += 1;
+    console.log("✓ Last name found");
   }
   if (profile["Headline"] || profile.headline) {
     score += 1;
+    console.log("✓ Headline found");
   }
   if (profile["Industry"] || profile.industry) {
     score += 1;
+    console.log("✓ Industry found");
   }
   
-  // Skills (2 points)
+  // Enhanced skills scoring (2 points)
   const skillsCount = skillsSnapshot.length;
-  const skillsPoints = Math.min(skillsCount / 5, 2);
+  const skillsPoints = Math.min(skillsCount / 3, 2); // More generous scoring
   score += skillsPoints;
+  console.log(`✓ Skills: ${skillsCount} skills = ${skillsPoints} points`);
   
-  // Experience (2 points)
+  // Enhanced experience scoring (2 points)
   const positionsCount = positionsSnapshot.length;
-  const positionsPoints = Math.min(positionsCount / 2, 2);
+  const positionsPoints = Math.min(positionsCount, 2); // 1 point per position, max 2
   score += positionsPoints;
+  console.log(`✓ Positions: ${positionsCount} positions = ${positionsPoints} points`);
   
-  // Education (2 points)
+  // Enhanced education scoring (2 points)
   const educationCount = educationSnapshot.length;
   const educationPoints = Math.min(educationCount, 2);
   score += educationPoints;
+  console.log(`✓ Education: ${educationCount} entries = ${educationPoints} points`);
   
   const finalScore = Math.min(Math.round(score), 10);
+  console.log(`Final profile completeness score: ${finalScore}/10`);
   
   return finalScore;
 }
 
 function calculatePostingActivity(postsData, changelogData) {
+  console.log("=== ENHANCED POSTING ACTIVITY CALCULATION ===");
+  
   // Get posts from changelog (last 28 days)
   const posts = changelogData?.elements?.filter(e => 
     e.resourceName === "ugcPosts" && e.method === "CREATE"
@@ -274,56 +363,79 @@ function calculatePostingActivity(postsData, changelogData) {
   // Also check snapshot data for historical posts
   const snapshotPosts = postsData?.elements?.[0]?.snapshotData || [];
   
+  console.log("Posting activity data:", {
+    changelogPosts: posts.length,
+    snapshotPosts: snapshotPosts.length
+  });
+  
   const last30Days = Date.now() - (30 * 24 * 60 * 60 * 1000);
   const recentPosts = posts.filter(p => p.capturedAt >= last30Days);
   
   // If no recent posts in changelog, use snapshot data
-  const totalRecentPosts = recentPosts.length > 0 ? recentPosts.length : Math.min(snapshotPosts.length, 10);
+  const totalRecentPosts = recentPosts.length > 0 ? recentPosts.length : Math.min(snapshotPosts.length, 15);
   
-  // Score based on posting frequency (0-10)
+  console.log(`Recent posts calculation: ${recentPosts.length} from changelog, ${snapshotPosts.length} from snapshot, final: ${totalRecentPosts}`);
+  
+  // Enhanced scoring based on posting frequency (0-10)
   let score = 0;
-  if (totalRecentPosts >= 20) score = 10;
-  else if (totalRecentPosts >= 15) score = 8;
-  else if (totalRecentPosts >= 10) score = 6;
-  else if (totalRecentPosts >= 5) score = 4;
-  else if (totalRecentPosts >= 1) score = 2;
+  if (totalRecentPosts >= 30) score = 10;      // Very active (1+ per day)
+  else if (totalRecentPosts >= 20) score = 9;  // Highly active
+  else if (totalRecentPosts >= 15) score = 8;  // Very good
+  else if (totalRecentPosts >= 10) score = 7;  // Good
+  else if (totalRecentPosts >= 7) score = 6;   // Decent (1-2 per week)
+  else if (totalRecentPosts >= 5) score = 5;   // Moderate
+  else if (totalRecentPosts >= 3) score = 4;   // Low but present
+  else if (totalRecentPosts >= 1) score = 3;   // Minimal
   else score = 0;
+  
+  console.log(`Posting activity score: ${score}/10 (${totalRecentPosts} posts)`);
   return score;
 }
 
 function calculateEngagementQuality(changelogData) {
-  console.log("=== ENGAGEMENT QUALITY CALCULATION ===");
+  console.log("=== ENHANCED ENGAGEMENT QUALITY CALCULATION ===");
   
   const elements = changelogData?.elements || [];
-  console.log("Total changelog elements:", elements.length);
+  console.log("Processing changelog elements:", elements.length);
   
   const likes = elements.filter(e => e.resourceName === "socialActions/likes" && e.method === "CREATE");
   const comments = elements.filter(e => e.resourceName === "socialActions/comments" && e.method === "CREATE");
+  const shares = elements.filter(e => e.resourceName === "socialActions/shares" && e.method === "CREATE");
   const posts = elements.filter(e => e.resourceName === "ugcPosts" && e.method === "CREATE");
   
-  console.log("Engagement data:", {
+  console.log("Enhanced engagement data:", {
     likes: likes.length,
     comments: comments.length,
+    shares: shares.length,
     posts: posts.length
   });
   
-  console.log("Sample like:", likes[0]);
-  console.log("Sample comment:", comments[0]);
-  console.log("Sample post:", posts[0]);
-  
   if (posts.length === 0) return 0;
   
-  const avgEngagement = (likes.length + comments.length) / posts.length;
+  // Enhanced engagement calculation with weighted scoring
+  const totalEngagement = likes.length + (comments.length * 2) + (shares.length * 3); // Weight comments and shares higher
+  const avgEngagement = totalEngagement / posts.length;
   
+  console.log("Engagement calculation:", {
+    totalEngagement,
+    avgEngagement,
+    weightedScore: avgEngagement
+  });
+  
+  // Enhanced scoring system
   let score = 0;
-  if (avgEngagement >= 20) score = 10;
-  else if (avgEngagement >= 15) score = 8;
-  else if (avgEngagement >= 10) score = 6;
-  else if (avgEngagement >= 5) score = 4;
-  else if (avgEngagement >= 1) score = 2;
+  if (avgEngagement >= 50) score = 10;      // Exceptional engagement
+  else if (avgEngagement >= 30) score = 9;  // Excellent
+  else if (avgEngagement >= 20) score = 8;  // Very good
+  else if (avgEngagement >= 15) score = 7;  // Good
+  else if (avgEngagement >= 10) score = 6;  // Above average
+  else if (avgEngagement >= 7) score = 5;   // Average
+  else if (avgEngagement >= 5) score = 4;   // Below average
+  else if (avgEngagement >= 3) score = 3;   // Low
+  else if (avgEngagement >= 1) score = 2;   // Very low
   else score = 0;
   
-  console.log(`Engagement quality score: ${score}/10 (avg: ${avgEngagement})`);
+  console.log(`Enhanced engagement quality score: ${score}/10 (weighted avg: ${avgEngagement.toFixed(2)})`);
   return score;
 }
 

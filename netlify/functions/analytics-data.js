@@ -14,14 +14,20 @@ export async function handler(event, context) {
   const { timeRange = "30d" } = event.queryStringParameters || {};
 
   if (!authorization) {
+    console.error("Analytics Data: No authorization header provided");
     return {
       statusCode: 401,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
       body: JSON.stringify({ error: "No authorization token" }),
     };
   }
 
   try {
-    console.log("Analytics Data: Starting detailed analysis");
+    console.log(`Analytics Data: Starting comprehensive analysis for ${timeRange} period`);
+    const startTime = Date.now();
 
     // Fetch all required data
     const [
@@ -35,12 +41,27 @@ export async function handler(event, context) {
       fetchLinkedInData(authorization, "linkedin-snapshot", "PROFILE"),
       fetchLinkedInData(authorization, "linkedin-snapshot", "CONNECTIONS"),
       fetchLinkedInData(authorization, "linkedin-snapshot", "MEMBER_SHARE_INFO"),
-      fetchLinkedInData(authorization, "linkedin-changelog", null, "count=200"),
+      fetchLinkedInData(authorization, "linkedin-changelog", null, "count=500"), // Increased for better analytics
       fetchLinkedInData(authorization, "linkedin-snapshot", "SKILLS"),
       fetchLinkedInData(authorization, "linkedin-snapshot", "POSITIONS")
     ]);
 
-    console.log("Analytics Data: All data fetched successfully");
+    const fetchTime = Date.now() - startTime;
+    console.log(`Analytics Data: All data fetched successfully in ${fetchTime}ms`);
+
+    // Enhanced data quality logging
+    console.log("Analytics Data: Comprehensive data summary:", {
+      profile: profileData?.elements?.length || 0,
+      connections: connectionsData?.elements?.[0]?.snapshotData?.length || 0,
+      posts: postsData?.elements?.[0]?.snapshotData?.length || 0,
+      changelog: changelogData?.elements?.length || 0,
+      skills: skillsData?.elements?.[0]?.snapshotData?.length || 0,
+      positions: positionsData?.elements?.[0]?.snapshotData?.length || 0,
+      timeRange,
+      fetchTimeMs: fetchTime
+    });
+
+    const processingStartTime = Date.now();
 
     // Calculate detailed analytics
     const analytics = {
@@ -53,10 +74,31 @@ export async function handler(event, context) {
       audienceDistribution: calculateAudienceDistribution(connectionsData),
       scoreImpacts: getScoreImpacts(),
       timeRange,
-      lastUpdated: new Date().toISOString()
+      lastUpdated: new Date().toISOString(),
+      metadata: {
+        fetchTimeMs: fetchTime,
+        processingTimeMs: Date.now() - processingStartTime,
+        totalTimeMs: Date.now() - startTime,
+        dataQuality: calculateAnalyticsDataQuality({
+          profileData,
+          connectionsData,
+          postsData,
+          changelogData,
+          skillsData,
+          positionsData
+        }),
+        recordCounts: {
+          profileRecords: profileData?.elements?.length || 0,
+          connectionRecords: connectionsData?.elements?.[0]?.snapshotData?.length || 0,
+          postRecords: postsData?.elements?.[0]?.snapshotData?.length || 0,
+          changelogRecords: changelogData?.elements?.length || 0,
+          skillRecords: skillsData?.elements?.[0]?.snapshotData?.length || 0,
+          positionRecords: positionsData?.elements?.[0]?.snapshotData?.length || 0
+        }
+      }
     };
 
-    console.log("Analytics Data: Analysis complete");
+    console.log(`Analytics Data: Comprehensive analysis complete in ${Date.now() - startTime}ms`);
 
     return {
       statusCode: 200,
@@ -69,6 +111,7 @@ export async function handler(event, context) {
     };
   } catch (error) {
     console.error("Analytics Data Error:", error);
+    console.error("Analytics Data Error Stack:", error.stack);
     return {
       statusCode: 500,
       headers: {
@@ -78,6 +121,7 @@ export async function handler(event, context) {
       body: JSON.stringify({
         error: "Failed to fetch analytics data",
         details: error.message,
+        timestamp: new Date().toISOString()
       }),
     };
   }
@@ -85,6 +129,7 @@ export async function handler(event, context) {
 
 async function fetchLinkedInData(authorization, endpoint, domain = null, extraParams = "") {
   try {
+    const startTime = Date.now();
     let url = `/.netlify/functions/${endpoint}`;
     const params = new URLSearchParams();
     
@@ -103,6 +148,8 @@ async function fetchLinkedInData(authorization, endpoint, domain = null, extraPa
       url += `?${params.toString()}`;
     }
 
+    console.log(`Analytics: Fetching ${endpoint}${domain ? ` (${domain})` : ''}`);
+
     const response = await fetch(url, {
       headers: {
         Authorization: authorization,
@@ -110,20 +157,62 @@ async function fetchLinkedInData(authorization, endpoint, domain = null, extraPa
       },
     });
 
+    const fetchTime = Date.now() - startTime;
+
     if (!response.ok) {
-      console.warn(`Failed to fetch ${endpoint} ${domain}: ${response.status}`);
+      const errorText = await response.text().catch(() => 'No error details');
+      console.warn(`Failed to fetch ${endpoint} ${domain}: ${response.status} ${response.statusText} (${fetchTime}ms)`, errorText);
       return null;
     }
 
-    return await response.json();
+    const data = await response.json();
+    console.log(`Analytics: Successfully fetched ${endpoint}${domain ? ` (${domain})` : ''} in ${fetchTime}ms`);
+    return data;
   } catch (error) {
-    console.error(`Error fetching ${endpoint} ${domain}:`, error);
+    console.error(`Analytics: Network error fetching ${endpoint} ${domain}:`, error.message);
     return null;
   }
 }
 
+function calculateAnalyticsDataQuality(data) {
+  const {
+    profileData,
+    connectionsData,
+    postsData,
+    changelogData,
+    skillsData,
+    positionsData
+  } = data;
+
+  let qualityScore = 0;
+  let maxScore = 6;
+
+  // Check data availability and quality
+  if (profileData?.elements?.length) qualityScore += 1;
+  if (connectionsData?.elements?.[0]?.snapshotData?.length >= 10) qualityScore += 1; // At least 10 connections
+  if (postsData?.elements?.[0]?.snapshotData?.length >= 1) qualityScore += 1; // At least 1 post
+  if (changelogData?.elements?.length >= 10) qualityScore += 1; // At least 10 changelog entries
+  if (skillsData?.elements?.[0]?.snapshotData?.length >= 3) qualityScore += 1; // At least 3 skills
+  if (positionsData?.elements?.[0]?.snapshotData?.length >= 1) qualityScore += 1; // At least 1 position
+
+  return {
+    score: Math.round((qualityScore / maxScore) * 100),
+    breakdown: {
+      hasProfile: !!profileData?.elements?.length,
+      hasConnections: !!(connectionsData?.elements?.[0]?.snapshotData?.length >= 10),
+      hasPosts: !!(postsData?.elements?.[0]?.snapshotData?.length >= 1),
+      hasChangelog: !!(changelogData?.elements?.length >= 10),
+      hasSkills: !!(skillsData?.elements?.[0]?.snapshotData?.length >= 3),
+      hasPositions: !!(positionsData?.elements?.[0]?.snapshotData?.length >= 1)
+    }
+  };
+}
+
 function calculatePostsEngagementsTrend(changelogData, timeRange) {
+  console.log("=== ENHANCED POSTS ENGAGEMENT TREND CALCULATION ===");
+  
   const elements = changelogData?.elements || [];
+  console.log(`Processing ${elements.length} changelog elements for ${timeRange} period`);
   
   // Determine date range
   const days = timeRange === "7d" ? 7 : timeRange === "30d" ? 30 : 90;
@@ -134,17 +223,22 @@ function calculatePostsEngagementsTrend(changelogData, timeRange) {
     date.setDate(date.getDate() - i);
     dateRange.push({
       date: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+      fullDate: date.toISOString().split('T')[0],
       posts: 0,
       likes: 0,
       comments: 0,
-      shares: 0
+      shares: 0,
+      totalEngagement: 0
     });
   }
   
+  console.log(`Created date range for ${days} days:`, dateRange.map(d => d.date));
+  
   // Count activities by date
   elements.forEach(element => {
-    const elementDate = new Date(element.capturedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-    const dayData = dateRange.find(day => day.date === elementDate);
+    const elementDate = new Date(element.capturedAt);
+    const elementDateStr = elementDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const dayData = dateRange.find(day => day.date === elementDateStr);
     
     if (dayData) {
       if (element.resourceName === "ugcPosts" && element.method === "CREATE") {
@@ -159,13 +253,22 @@ function calculatePostsEngagementsTrend(changelogData, timeRange) {
     }
   });
   
-  return dateRange.map(day => ({
+  // Calculate total engagement and return enhanced data
+  const result = dateRange.map(day => ({
     date: day.date,
     posts: day.posts,
     likes: day.likes,
     comments: day.comments,
+    shares: day.shares,
     totalEngagement: day.likes + day.comments + day.shares
   }));
+  
+  const totalPosts = result.reduce((sum, day) => sum + day.posts, 0);
+  const totalEngagement = result.reduce((sum, day) => sum + day.totalEngagement, 0);
+  
+  console.log(`Posts engagement trend: ${totalPosts} posts, ${totalEngagement} total engagement over ${days} days`);
+  
+  return result;
 }
 
 function calculateConnectionsGrowth(connectionsData, timeRange) {
