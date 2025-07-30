@@ -14,7 +14,7 @@ export async function handler(event) {
   }
 
 
-  try {
+  const { assetId, token } = event.queryStringParameters || {};
     const { assetId } = event.queryStringParameters || {};
     const token = (event.queryStringParameters || {}).token || process.env.LINKEDIN_DMA_TOKEN;
 
@@ -102,6 +102,94 @@ export async function handler(event) {
         "Access-Control-Allow-Origin": "*",
       },
       body: `Server error: ${err.message}` 
+    };
+  }
+}
+  if (!assetId) {
+    return {
+      statusCode: 400,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+      body: JSON.stringify({ error: "Missing assetId parameter" })
+    };
+  }
+
+    // Clean the asset ID (remove URN prefix if present)
+    const cleanAssetId = assetId.replace("urn:li:digitalmediaAsset:", "");
+    
+    // Use the LinkedIn media download API
+    const mediaUrl = `https://api.linkedin.com/mediaDownload/${encodeURIComponent(cleanAssetId)}`;
+    
+    console.log("Fetching media from LinkedIn:", mediaUrl);
+    
+    const response = await fetch(mediaUrl, {
+      headers: {
+        "Authorization": authorization,
+        "LinkedIn-Version": "202312",
+        "User-Agent": "LinkedInGrowth/1.0"
+      },
+      redirect: "follow"
+    });
+
+    if (!response.ok) {
+      console.error(`LinkedIn media API error: ${response.status} ${response.statusText}`);
+      
+      if (response.status === 404) {
+        return {
+          statusCode: 404,
+          headers: {
+            "Content-Type": "application/json",
+            "Access-Control-Allow-Origin": "*",
+          },
+          body: JSON.stringify({ error: "Media asset not found" })
+        };
+      }
+      
+      return {
+        statusCode: response.status,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+        body: JSON.stringify({ 
+          error: `LinkedIn API error: ${response.status} ${response.statusText}` 
+        })
+      };
+    }
+
+    // Get the content type from LinkedIn's response
+    const contentType = response.headers.get("content-type") || "application/octet-stream";
+    
+    // Convert response to buffer
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    
+    console.log(`Successfully fetched media: ${buffer.length} bytes, type: ${contentType}`);
+    
+    return {
+      statusCode: 200,
+      headers: {
+        "Content-Type": contentType,
+        "Access-Control-Allow-Origin": "*",
+        "Cache-Control": "public, max-age=3600", // Cache for 1 hour
+      },
+      body: buffer.toString("base64"),
+      isBase64Encoded: true
+    };
+  } catch (error) {
+    console.error("Media download error:", error);
+    return {
+      statusCode: 500,
+      headers: {
+        "Content-Type": "application/json",
+        "Access-Control-Allow-Origin": "*",
+      },
+      body: JSON.stringify({
+        error: "Failed to download media",
+        details: error.message
+      })
     };
   }
 }

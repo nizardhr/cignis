@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
   Search,
@@ -10,47 +10,36 @@ import {
   Share,
   Clock,
   Zap,
-  Eye,
   Calendar,
-  ChevronDown,
-  Database,
   AlertCircle,
   Image as ImageIcon,
   ImageOff,
   Video,
   FileText,
+  ExternalLink,
 } from "lucide-react";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { LoadingSpinner } from "../ui/LoadingSpinner";
 import { Pagination } from "../ui/Pagination";
-import { CacheStatusIndicator } from "../ui/CacheStatusIndicator";
-import { usePostPulseData } from "../../hooks/usePostPulseData";
+import { usePostPulseData, PostPulsePost } from "../../hooks/usePostPulseData";
 import { useAppStore } from "../../stores/appStore";
-import { PostPulseCache } from "../../services/postpulse-cache";
-import { ProcessedPost } from "../../services/postpulse-cache";
-import { useAuthStore } from "../../stores/authStore";
 
 export const PostPulse = () => {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedPosts, setSelectedPosts] = useState<string[]>([]);
   const [timeFilter, setTimeFilter] = useState<"7d" | "30d" | "90d">("7d");
-  const [debugMode, setDebugMode] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [imageLoadErrors, setImageLoadErrors] = useState<Set<string>>(new Set());
   const { setCurrentModule } = useAppStore();
-  const { dmaToken } = useAuthStore();
 
-  // Use the enhanced data hook
+  // Use the PostPulse data hook
   const {
     posts,
     isLoading,
-    isInitialLoading,
-    isRefetching,
     error,
-    cacheStatus,
     pagination,
-    dataSources,
+    metadata,
   } = usePostPulseData({
     timeFilter,
     searchTerm,
@@ -58,32 +47,9 @@ export const PostPulse = () => {
     pageSize: 12,
   });
 
-  const handleImageError = (postId: string) => {
-    setImageLoadErrors(prev => {
-      const newSet = new Set([...prev, postId]);
-      console.log(`Image load error for post ${postId}, total errors: ${newSet.size}`);
-      return newSet;
-    });
-  };
-
-  const getThumbnailUrl = (post: ProcessedPost): string | null => {
-    // Don't show thumbnail if there was a previous load error
-    if (imageLoadErrors.has(post.id)) {
-      return null;
-    }
-    
-    // Use existing thumbnail URL if available
-    if (post.thumbnail) {
-      return post.thumbnail;
-    }
-
-    // Generate thumbnail URL for LinkedIn assets with DMA token
-    if (post.mediaAssetId && dmaToken) {
-      return `/.netlify/functions/linkedin-media-download?assetId=${post.mediaAssetId}&token=${encodeURIComponent(dmaToken)}`;
-    }
-    
-    return null;
-  };
+  const handleImageError = useCallback((postId: string) => {
+    setImageLoadErrors(prev => new Set([...prev, postId]));
+  }, []);
 
   const getMediaIcon = (mediaType: string) => {
     switch (mediaType) {
@@ -96,10 +62,6 @@ export const PostPulse = () => {
       default:
         return <ImageOff size={24} className="text-gray-400" />;
     }
-  };
-  const handleRefresh = () => {
-    PostPulseCache.clearCache();
-    window.location.reload();
   };
 
   const togglePostSelection = (postId: string) => {
@@ -114,12 +76,12 @@ export const PostPulse = () => {
     navigator.clipboard.writeText(text);
   };
 
-  const handleRepurpose = (post: ProcessedPost) => {
+  const handleRepurpose = (post: PostPulsePost) => {
     // Store the post in sessionStorage for PostGen to access
     sessionStorage.setItem(
       "repurposePost",
       JSON.stringify({
-        text: post.text,
+        text: post.title,
         originalDate: new Date(post.timestamp).toISOString(),
         engagement: {
           likes: post.likes,
@@ -133,11 +95,10 @@ export const PostPulse = () => {
 
     // Navigate to PostGen rewrite section
     setCurrentModule("postgen");
-    // Update URL to show the module change
     window.history.pushState({}, "", "/?module=postgen&tab=rewrite");
   };
 
-  const getPostStatus = (post: ProcessedPost) => {
+  const getPostStatus = (post: PostPulsePost) => {
     if (post.daysSincePosted < 7) {
       return {
         label: "Too Recent",
@@ -166,11 +127,9 @@ export const PostPulse = () => {
 
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
-    // Scroll to top when page changes
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  // Reset to page 1 when filters change
   const handleTimeFilterChange = (filter: "7d" | "30d" | "90d") => {
     setTimeFilter(filter);
     setCurrentPage(1);
@@ -181,7 +140,7 @@ export const PostPulse = () => {
     setCurrentPage(1);
   };
 
-  if (isInitialLoading) {
+  if (isLoading) {
     return (
       <motion.div
         initial={{ opacity: 0, y: 20 }}
@@ -192,13 +151,12 @@ export const PostPulse = () => {
         <div className="text-center">
           <LoadingSpinner size="lg" />
           <p className="mt-4 text-gray-600">Loading your LinkedIn posts...</p>
-          <p className="text-sm text-gray-500">Fetching historical data...</p>
+          <p className="text-sm text-gray-500">Analyzing your content...</p>
         </div>
       </motion.div>
     );
   }
 
-  // Show error state if data fetching failed
   if (error && posts.length === 0) {
     return (
       <motion.div
@@ -215,7 +173,7 @@ export const PostPulse = () => {
           We encountered an error while loading your LinkedIn posts:
         </p>
         <p className="text-sm text-red-600 mb-6">{error.message}</p>
-        <Button variant="primary" onClick={handleRefresh}>
+        <Button variant="primary" onClick={() => window.location.reload()}>
           <RefreshCw size={16} className="mr-2" />
           Try Again
         </Button>
@@ -234,68 +192,16 @@ export const PostPulse = () => {
         <div>
           <h2 className="text-2xl font-bold">PostPulse</h2>
           <p className="text-gray-600 mt-1">
-            Your LinkedIn posts from the last {timeFilter}
+            Your LinkedIn posts from the last {timeFilter} • {pagination.totalPosts} posts found
           </p>
         </div>
         <div className="flex space-x-3">
-          <Button
-            variant="outline"
-            onClick={() => setDebugMode(!debugMode)}
-            className="text-xs"
-          >
-            {debugMode ? "Hide Debug" : "Debug Mode"}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handleRefresh}
-            disabled={isRefetching}
-          >
-            <RefreshCw
-              size={16}
-              className={`mr-2 ${isRefetching ? "animate-spin" : ""}`}
-            />
-            Refresh
-          </Button>
           <Button variant="primary" disabled={selectedPosts.length === 0}>
             <Send size={16} className="mr-2" />
             Push to PostGen ({selectedPosts.length})
           </Button>
         </div>
       </div>
-
-      {/* Cache Status Indicator */}
-      <Card variant="glass" className="p-4">
-        <CacheStatusIndicator
-          cacheStatus={cacheStatus}
-          dataSources={dataSources}
-          isRefetching={isRefetching}
-          onRefresh={handleRefresh}
-        />
-      </Card>
-
-      {/* Debug Information */}
-      {debugMode && (
-        <Card variant="glass" className="p-4 bg-yellow-50">
-          <h3 className="font-semibold mb-2">Debug Information:</h3>
-          <div className="text-sm space-y-1">
-            <div>Total Posts: {pagination.totalPosts}</div>
-            <div>
-              Current Page: {pagination.currentPage} of {pagination.totalPages}
-            </div>
-            <div>Posts on Page: {posts.length}</div>
-            <div>Time Filter: {timeFilter}</div>
-            <div>Search Term: {searchTerm || "None"}</div>
-            <div>Cache Status: {cacheStatus.exists ? "Exists" : "None"}</div>
-            <div>
-              Data Sources:{" "}
-              {Object.entries(dataSources)
-                .filter(([_, v]) => v)
-                .map(([k]) => k)
-                .join(", ")}
-            </div>
-          </div>
-        </Card>
-      )}
 
       {/* Search and Time Filter */}
       <Card variant="glass" className="p-4">
@@ -331,14 +237,6 @@ export const PostPulse = () => {
         </div>
       </Card>
 
-      {/* Loading State */}
-      {isRefetching && (
-        <div className="flex items-center justify-center py-4">
-          <LoadingSpinner size="md" />
-          <span className="ml-2 text-gray-600">Updating posts...</span>
-        </div>
-      )}
-
       {/* Posts Grid */}
       {posts.length === 0 ? (
         <Card variant="glass" className="p-8 text-center">
@@ -350,6 +248,15 @@ export const PostPulse = () => {
                 ? "No posts found in the selected date range. Try adjusting your time filter."
                 : "No posts match your search criteria. Try a different search term."}
             </p>
+            <div className="mt-6">
+              <Button
+                variant="primary"
+                onClick={() => window.open('https://linkedin.com', '_blank')}
+              >
+                <ExternalLink size={16} className="mr-2" />
+                Post on LinkedIn
+              </Button>
+            </div>
           </div>
         </Card>
       ) : (
@@ -358,7 +265,8 @@ export const PostPulse = () => {
             {posts.map((post, index) => {
               const status = getPostStatus(post);
               const StatusIcon = status.icon;
-              const thumbnailUrl = getThumbnailUrl(post);
+              const hasImageError = imageLoadErrors.has(post.id);
+              const showThumbnail = post.thumbnail && !hasImageError;
 
               return (
                 <motion.div
@@ -398,37 +306,46 @@ export const PostPulse = () => {
                       <span>{status.label}</span>
                     </div>
 
-                    {/* Post Content with Thumbnail */}
+                    {/* Post Content */}
                     <div className="mt-12 mb-4">
-                      <div className="flex space-x-4">
-                        {/* Thumbnail Section */}
-                        <div className="flex-shrink-0">
-                          {thumbnailUrl ? (
-                            <div className="w-24 h-24 bg-gray-100 rounded-lg overflow-hidden">
+                      <div className="flex gap-3 items-start">
+                        {/* Thumbnail */}
+                        <div className="flex-shrink-0 w-20 h-20">
+                          {showThumbnail ? (
+                            <div className="w-full h-full bg-gray-100 rounded-md overflow-hidden">
                               <img
-                                src={thumbnailUrl}
+                                src={post.thumbnail}
                                 alt="Post thumbnail"
                                 className="w-full h-full object-cover"
                                 loading="lazy"
-                                onError={() => handleImageError(post.id)}
+                                onError={() => {
+                                  console.log(`Thumbnail failed for post ${post.id}:`, post.thumbnail);
+                                  handleImageError(post.id);
+                                }}
                               />
                             </div>
                           ) : post.mediaType !== "TEXT" ? (
-                            <div className="w-24 h-24 bg-gray-100 rounded-lg flex items-center justify-center">
+                            <div className="w-full h-full bg-gray-100 rounded-md flex items-center justify-center">
                               {getMediaIcon(post.mediaType)}
                             </div>
-                          ) : null}
+                          ) : (
+                            <div className="w-full h-full bg-gray-50 rounded-md flex items-center justify-center">
+                              <FileText size={20} className="text-gray-300" />
+                            </div>
+                          )}
                         </div>
 
                         {/* Post Text */}
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm text-gray-700 dark:text-gray-300 line-clamp-4">
-                            {truncateText(post.text)}
+                          <h4 className="text-sm font-semibold line-clamp-2 mb-2">
+                            {truncateText(post.title, 100)}
+                          </h4>
+                          <p className="text-xs text-gray-600 line-clamp-3">
+                            {truncateText(post.text, 120)}
                           </p>
                         </div>
                       </div>
                     </div>
-
 
                     {/* Post Date */}
                     <p className="text-xs text-gray-500 mb-3">
@@ -490,7 +407,7 @@ export const PostPulse = () => {
                         size="sm"
                         onClick={(e) => {
                           e.stopPropagation();
-                          copyToClipboard(post.text);
+                          copyToClipboard(post.title);
                         }}
                       >
                         <Copy size={14} />
@@ -516,21 +433,25 @@ export const PostPulse = () => {
           </div>
 
           {/* Pagination */}
-          <Pagination
-            currentPage={pagination.currentPage}
-            totalPages={pagination.totalPages}
-            onPageChange={handlePageChange}
-            className="mt-8"
-          />
+          {pagination.totalPages > 1 && (
+            <Pagination
+              currentPage={pagination.currentPage}
+              totalPages={pagination.totalPages}
+              onPageChange={handlePageChange}
+              className="mt-8"
+            />
+          )}
 
           {/* Posts Summary */}
           <div className="text-center text-sm text-gray-500 mt-4">
             Showing {posts.length} of {pagination.totalPosts} posts from the
             last {timeFilter} • Page {pagination.currentPage} of{" "}
             {pagination.totalPages}
+            {metadata.dataSource && (
+              <span> • Data: {metadata.dataSource}</span>
+            )}
           </div>
         </>
       )}
     </motion.div>
   );
-};
