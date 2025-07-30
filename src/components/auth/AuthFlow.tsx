@@ -32,7 +32,7 @@ export const AuthFlow = ({ isDark = false }: AuthFlowProps) => {
       isProcessingAuth
     });
     
-    if (accessTokenParam && !isProcessingAuth) {
+    if (accessTokenParam && !accessToken && !isProcessingAuth) {
       console.log('AuthFlow - Processing access token');
       setIsProcessingAuth(true);
       setTokens(accessTokenParam, dmaToken);
@@ -41,7 +41,7 @@ export const AuthFlow = ({ isDark = false }: AuthFlowProps) => {
       setTimeout(() => setIsProcessingAuth(false), 500);
     }
     
-    if (dmaTokenParam && !isProcessingAuth) {
+    if (dmaTokenParam && !dmaToken && !isProcessingAuth) {
       console.log('AuthFlow - Processing DMA token');
       setIsProcessingAuth(true);
       setTokens(accessToken, dmaTokenParam);

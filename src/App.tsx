@@ -41,6 +41,17 @@ function App() {
     const dmaTokenParam = urlParams.get('dma_token');
     const hasAuthParams = accessTokenParam || dmaTokenParam;
     
+    // Process tokens immediately if found
+    if (accessTokenParam && !accessToken) {
+      console.log('App: Setting access token from URL');
+      useAuthStore.getState().setTokens(accessTokenParam, dmaToken);
+    }
+    
+    if (dmaTokenParam && !dmaToken) {
+      console.log('App: Setting DMA token from URL');
+      useAuthStore.getState().setTokens(accessToken, dmaTokenParam);
+    }
+    
     // Only log if there are auth params to process or if not authenticated
     if (hasAuthParams || (!isBasicAuthenticated && !isFullyAuthenticated)) {
       console.log('App: Processing authentication state', {
