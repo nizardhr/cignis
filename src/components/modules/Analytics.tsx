@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Calendar, TrendingUp, Users, MessageCircle, Eye, BarChart3, Heart, FileText, Info, RefreshCw, AlertCircle, Filter, Download, Share2 } from 'lucide-react';
+import { Calendar, TrendingUp, Users, MessageCircle, Eye, BarChart3, Heart, FileText, Info, RefreshCw, AlertCircle, Filter, Download, Share2, ExternalLink, Zap } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { Button } from '../ui/Button';
 import { LoadingSpinner } from '../ui/LoadingSpinner';
@@ -629,7 +629,7 @@ export const Analytics = () => {
             </div>
           </div>
           
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {/* Top Industries List */}
             <div className="bg-white p-6 rounded-xl border border-gray-200">
               <div className="flex items-center justify-between mb-6">
@@ -697,6 +697,44 @@ export const Analytics = () => {
                   <div className="text-center">
                     <Users size={32} className="mx-auto mb-2 text-gray-300" />
                     <p className="text-sm">No position data available</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Location Distribution */}
+            <div className="bg-white p-6 rounded-xl border border-gray-200">
+              <div className="flex items-center justify-between mb-6">
+                <h4 className="text-lg font-bold text-gray-900">Locations</h4>
+                <div className="relative group">
+                  <Info size={16} className="text-gray-400 cursor-help hover:text-gray-600 transition-colors" />
+                  <div className="absolute bottom-full right-0 mb-2 w-72 p-3 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-lg">
+                    Geographic diversity can expand your professional reach
+                  </div>
+                </div>
+              </div>
+              {audienceDistribution.locations.length > 0 ? (
+                <ResponsiveContainer width="100%" height={280}>
+                  <BarChart data={audienceDistribution.locations.slice(0, 8)} layout="horizontal">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                  <XAxis type="number" />
+                  <YAxis dataKey="name" type="category" width={120} tick={{ fontSize: 11 }} />
+                  <Tooltip 
+                    contentStyle={{ 
+                      backgroundColor: 'white', 
+                      border: '1px solid #e5e7eb', 
+                      borderRadius: '8px',
+                      boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
+                    }} 
+                  />
+                  <Bar dataKey="value" fill="#ffc658" radius={[0, 4, 4, 0]} />
+                </BarChart>
+                </ResponsiveContainer>
+              ) : (
+                <div className="h-72 flex items-center justify-center text-gray-500">
+                  <div className="text-center">
+                    <Users size={32} className="mx-auto mb-2 text-gray-300" />
+                    <p className="text-sm">No location data</p>
                   </div>
                 </div>
               )}
@@ -820,91 +858,6 @@ const EmptyActivityState = ({ dashboardData, onRefetch, isRefetching, setCurrent
           </div>
         </div>
       </Card>
-    </motion.div>
-  );
-};
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Location Distribution */}
-        <div className="bg-white p-6 rounded-xl border border-gray-200">
-          <div className="flex items-center justify-between mb-6">
-            <h4 className="text-lg font-bold text-gray-900">Locations</h4>
-            <div className="relative group">
-              <Info size={16} className="text-gray-400 cursor-help hover:text-gray-600 transition-colors" />
-              <div className="absolute bottom-full right-0 mb-2 w-72 p-3 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-lg">
-                Geographic diversity can expand your professional reach
-              </div>
-            </div>
-          </div>
-          {audienceDistribution.locations.length > 0 ? (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={audienceDistribution.locations.slice(0, 8)} layout="horizontal">
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis type="number" />
-              <YAxis dataKey="name" type="category" width={120} tick={{ fontSize: 11 }} />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: 'white', 
-                  border: '1px solid #e5e7eb', 
-                  borderRadius: '8px',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-                }} 
-              />
-              <Bar dataKey="value" fill="#ffc658" radius={[0, 4, 4, 0]} />
-            </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-72 flex items-center justify-center text-gray-500">
-              <div className="text-center">
-                <Users size={32} className="mx-auto mb-2 text-gray-300" />
-                <p className="text-sm">No location data</p>
-              </div>
-            </div>
-          )}
-        </div>
-        </div>
-        </Card>
-      )}
-
-      {/* Score Improvement Tips */}
-      {!showEmptyState && Object.keys(scoreImpacts).length > 0 && (
-        <Card variant="glass" className="p-8 bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200">
-        <div className="flex items-center space-x-3 mb-8">
-          <div className="p-3 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-xl">
-            <TrendingUp size={24} className="text-white" />
-          </div>
-          <div>
-            <h3 className="text-2xl font-bold text-gray-900">Improvement Recommendations</h3>
-            <p className="text-gray-600">Actionable tips to boost your LinkedIn performance</p>
-          </div>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-          {Object.entries(scoreImpacts).slice(0, 6).map(([key, impact]) => (
-            <motion.div 
-              key={key} 
-              className="bg-white p-6 rounded-xl border border-gray-200 hover:shadow-lg transition-all duration-300"
-              whileHover={{ y: -2 }}
-            >
-              <h4 className="font-bold text-gray-900 capitalize mb-3 text-lg">
-                {key.replace(/([A-Z])/g, ' $1').trim()}
-              </h4>
-              <p className="text-sm text-gray-700 mb-4 leading-relaxed">{impact?.description || "No description available"}</p>
-              <ul className="text-sm text-gray-600 space-y-2">
-                {(impact?.tips ?? []).map((tip, index) => (
-                  <li key={index} className="flex items-start space-x-2">
-                    <span className="w-2 h-2 bg-indigo-500 rounded-full mt-2 flex-shrink-0"></span>
-                    <span className="leading-relaxed">{tip}</span>
-                  </li>
-                ))}
-              </ul>
-            </motion.div>
-          ))}
-        </div>
-        </Card>
-      )}
     </motion.div>
   );
 };
