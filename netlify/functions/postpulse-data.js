@@ -102,7 +102,8 @@ export async function handler(event, context) {
 async function fetchMemberChangelog(authorization, startTime) {
   try {
     const count = 50; // Max allowed by DMA
-    const url = `https://api.linkedin.com/rest/memberChangeLogs?q=memberAndApplication&count=${count}&startTime=${startTime}`;
+    const url = `https://api.linkedin.com/rest/memberChangeLogs?q=memberAndApplication&count=${count}`;
+    // Remove startTime filter to get more recent data for testing
     
     const response = await fetch(url, {
       headers: {
@@ -117,7 +118,11 @@ async function fetchMemberChangelog(authorization, startTime) {
     }
 
     const data = await response.json();
-    console.log(`Fetched ${data.elements?.length || 0} changelog events`);
+    console.log(`Fetched ${data.elements?.length || 0} changelog events`, {
+      resourceNames: data.elements?.map(e => e.resourceName).slice(0, 10),
+      methods: data.elements?.map(e => e.method).slice(0, 10),
+      owners: data.elements?.map(e => e.owner).slice(0, 5)
+    });
     return data;
   } catch (error) {
     console.error("Error fetching changelog:", error);
@@ -176,18 +181,17 @@ function processChangelogPosts(changelogData, authorization) {
       return false;
     }
 
-    // Require author to be a person
-    const author = event.processedActivity?.author || event.activity?.author || event.owner;
-    const isPersonPost = author && typeof author === 'string' && author.startsWith('urn:li:person:');
-    
-    if (!isPersonPost) {
-      console.log("Excluding non-person post:", event.resourceId, "author:", author);
+    // Check if this is the user's own post
+    // For ugcPosts, the owner should be the current user
+    if (event.owner !== currentUserId) {
+      console.log("Excluding post from different user:", event.resourceId, "owner:", event.owner);
       return false;
     }
 
-    // Only posts where the user is the actor
-    if (event.owner !== event.actor) {
-      console.log("Excluding post where user is not the actor:", event.resourceId);
+    // Additional check: ensure the author is a person (not organization)
+    const author = event.processedActivity?.author || event.activity?.author || event.owner;
+    if (author && typeof author === 'string' && !author.startsWith('urn:li:person:')) {
+      console.log("Excluding non-person authored post:", event.resourceId, "author:", author);
       return false;
     }
 
@@ -246,11 +250,9 @@ function processHistoricalPosts(historicalData, authorization) {
     if (element.snapshotDomain === "MEMBER_SHARE_INFO" && element.snapshotData) {
       element.snapshotData.forEach((share, index) => {
         try {
-          // Skip company posts
-          if (share.Visibility === "COMPANY" || share.Visibility === "ORGANIZATION") {
-            console.log("Skipping company/organization post");
-            return;
-          }
+          // Skip company posts - but be more lenient with visibility checks
+          // Some personal posts might have different visibility settings
+          console.log("Processing historical share with visibility:", share.Visibility);
 
           const timestamp = new Date(share.Date).getTime();
           const daysSincePosted = Math.floor((Date.now() - timestamp) / (24 * 60 * 60 * 1000));
