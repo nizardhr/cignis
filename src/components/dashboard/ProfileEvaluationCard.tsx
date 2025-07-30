@@ -41,19 +41,41 @@ export const ProfileEvaluationCard = ({
   const formatMethodologyTooltip = (methodology: any) => {
     if (!methodology) return "No calculation data available";
     
-    let tooltip = methodology.formula;
+    // Convert technical formulas to user-friendly explanations
+    const userFriendlyExplanations = {
+      profileCompleteness: "Based on how complete your LinkedIn profile is - includes your photo, headline, summary, work experience, and skills.",
+      postingActivity: "Measures how often you post on LinkedIn in the last 28 days. More posts = higher score.",
+      engagementQuality: "Looks at how many likes and comments your posts get on average. Higher engagement = better score.",
+      networkGrowth: "Tracks your networking activity - sending connection requests and growing your network in the last 28 days.",
+      audienceRelevance: "Analyzes if your connections are in relevant industries and locations for your professional goals.",
+      contentDiversity: "Measures how varied your content is - mixing text posts, images, videos, and articles gets a higher score.",
+      engagementRate: "Compares your total engagement (likes + comments) to the number of posts you make.",
+      mutualInteractions: "Counts meaningful conversations - when you and others comment back and forth on posts.",
+      profileVisibility: "Measures how often people view your profile and find you in LinkedIn searches.",
+      professionalBrand: "Based on recommendations and endorsements you've received from your network."
+    };
     
-    if (methodology.inputs) {
-      tooltip += "\n\nInputs:";
+    // Find the metric key from the methodology
+    const metricKey = Object.keys(userFriendlyExplanations).find(key => 
+      methodology.formula?.toLowerCase().includes(key.toLowerCase()) ||
+      methodology.note?.toLowerCase().includes(key.toLowerCase())
+    );
+    
+    let tooltip = userFriendlyExplanations[metricKey] || "This metric helps measure your LinkedIn performance.";
+    
+    // Add simple calculation if inputs are available
+    if (methodology.inputs && Object.keys(methodology.inputs).length > 0) {
+      tooltip += "\n\nYour numbers:";
       Object.entries(methodology.inputs).forEach(([key, value]) => {
-        if (key !== 'note' && typeof value !== 'object') {
-          tooltip += `\n• ${key}: ${value}`;
+        if (key !== 'note' && key !== 'error' && typeof value !== 'object') {
+          const friendlyKey = key.replace(/([A-Z])/g, ' $1').toLowerCase().replace(/^\w/, c => c.toUpperCase());
+          tooltip += `\n• ${friendlyKey}: ${value}`;
         }
       });
     }
     
     if (methodology.note) {
-      tooltip += `\n\nNote: ${methodology.note}`;
+      tooltip += `\n\n${methodology.note}`;
     }
     
     return tooltip;

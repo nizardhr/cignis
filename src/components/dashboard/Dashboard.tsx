@@ -268,8 +268,17 @@ export const Dashboard = () => {
         </Card>
       )}
 
+      {/* Profile Evaluation - Main Focus */}
+      <div className="mb-8">
+        <ProfileEvaluationCard 
+          scores={profileEvaluation.scores}
+          overallScore={profileEvaluation.overallScore}
+          explanations={profileEvaluation.explanations}
+        />
+      </div>
+
       {/* Quick Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
         <QuickStatsCard
           title="Overall Score"
           value={`${dashboardData.scores.overall}/10`}
@@ -304,16 +313,8 @@ export const Dashboard = () => {
         />
       </div>
 
-      {/* Main Dashboard Cards */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Profile Evaluation */}
-        <ProfileEvaluationCard 
-          scores={profileEvaluation.scores}
-          overallScore={profileEvaluation.overallScore}
-          explanations={profileEvaluation.explanations}
-        />
-
-        {/* Summary KPIs */}
+      {/* Summary KPIs */}
+      <div className="mb-8">
         <SummaryKPIsCard kpis={summaryKPIs} />
       </div>
 

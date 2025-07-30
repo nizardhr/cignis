@@ -492,13 +492,21 @@ function calculateAudienceDistribution(connectionsSnapshot) {
   const locations = {};
 
   connections.forEach(conn => {
-    const industry = conn.Industry || conn.industry || "Unknown";
-    const position = conn.Position || conn.position || "Unknown";
-    const location = conn.Location || conn.location || "Unknown";
+    // Filter out null/empty values and use non-null industry data
+    const industry = conn.Industry || conn.industry;
+    const position = conn.Position || conn.position;
+    const location = conn.Location || conn.location;
 
-    industries[industry] = (industries[industry] || 0) + 1;
-    positions[position] = (positions[position] || 0) + 1;
-    locations[location] = (locations[location] || 0) + 1;
+    // Only count non-null, non-empty values
+    if (industry && industry.trim() && industry !== "Unknown") {
+      industries[industry] = (industries[industry] || 0) + 1;
+    }
+    if (position && position.trim() && position !== "Unknown") {
+      positions[position] = (positions[position] || 0) + 1;
+    }
+    if (location && location.trim() && location !== "Unknown") {
+      locations[location] = (locations[location] || 0) + 1;
+    }
   });
 
   return {

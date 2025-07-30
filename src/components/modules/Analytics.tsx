@@ -619,98 +619,210 @@ export const Analytics = () => {
       {/* Audience Distribution */}
       {!showEmptyState && (
         <Card variant="glass" className="p-8 bg-gradient-to-br from-white to-gray-50 border-2 border-gray-100">
-        <div className="flex items-center space-x-3 mb-8">
-          <div className="p-3 bg-gradient-to-r from-gray-600 to-gray-700 rounded-xl">
-            <Users size={24} className="text-white" />
-          </div>
-          <div>
-            <h3 className="text-2xl font-bold text-gray-900">Audience Analysis</h3>
-            <p className="text-gray-600">Understanding your network composition</p>
-          </div>
-        </div>
-        
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Industry Distribution */}
-        <div className="bg-white p-6 rounded-xl border border-gray-200">
-          <div className="flex items-center justify-between mb-6">
-            <h4 className="text-lg font-bold text-gray-900">Industries</h4>
-            <div className="relative group">
-              <Info size={16} className="text-gray-400 cursor-help hover:text-gray-600 transition-colors" />
-              <div className="absolute bottom-full right-0 mb-2 w-72 p-3 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-lg">
-                {scoreImpacts.audienceRelevance?.description || "Shows industry distribution of your network"}
-              </div>
+          <div className="flex items-center space-x-3 mb-8">
+            <div className="p-3 bg-gradient-to-r from-gray-600 to-gray-700 rounded-xl">
+              <Users size={24} className="text-white" />
+            </div>
+            <div>
+              <h3 className="text-2xl font-bold text-gray-900">Audience Analysis</h3>
+              <p className="text-gray-600">Understanding your network composition</p>
             </div>
           </div>
-          {audienceDistribution.industries.length > 0 ? (
-            <ResponsiveContainer width="100%" height={280}>
-              <PieChart>
-                <Pie
-                  data={audienceDistribution.industries}
-                  cx="50%"
-                  cy="50%"
-                  outerRadius={90}
-                  innerRadius={30}
-                  dataKey="value"
-                  label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
-                  labelLine={false}
-                >
-                  {audienceDistribution.industries.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* Top Industries List */}
+            <div className="bg-white p-6 rounded-xl border border-gray-200">
+              <div className="flex items-center justify-between mb-6">
+                <h4 className="text-lg font-bold text-gray-900">Top Industries</h4>
+                <div className="relative group">
+                  <Info size={16} className="text-gray-400 cursor-help hover:text-gray-600 transition-colors" />
+                  <div className="absolute bottom-full left-0 mb-2 w-72 p-3 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity z-50 shadow-lg">
+                    Shows the top industries represented in your LinkedIn network
+                  </div>
+                </div>
+              </div>
+              {audienceDistribution.industries.length > 0 ? (
+                <div className="space-y-3 max-h-80 overflow-y-auto">
+                  {audienceDistribution.industries.slice(0, 10).map((industry, index) => (
+                    <div key={industry.name} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                      <div className="flex items-center space-x-3">
+                        <div className={`w-3 h-3 rounded-full`} style={{ backgroundColor: COLORS[index % COLORS.length] }}></div>
+                        <span className="font-medium text-gray-900">{industry.name || 'Unknown'}</span>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold text-gray-900">{industry.value || 0}</div>
+                        <div className="text-xs text-gray-500">connections</div>
+                      </div>
+                    </div>
                   ))}
-                </Pie>
-                <Tooltip 
-                  contentStyle={{ 
-                    backgroundColor: 'white', 
-                    border: '1px solid #e5e7eb', 
-                    borderRadius: '8px',
-                    boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-                  }} 
-                />
-              </PieChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-72 flex items-center justify-center text-gray-500">
-              <div className="text-center">
-                <Users size={32} className="mx-auto mb-2 text-gray-300" />
-                <p className="text-sm">No industry data</p>
+                </div>
+              ) : (
+                <div className="h-64 flex items-center justify-center text-gray-500">
+                  <div className="text-center">
+                    <Users size={32} className="mx-auto mb-2 text-gray-300" />
+                    <p className="text-sm">No industry data available</p>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Top Positions List */}
+            <div className="bg-white p-6 rounded-xl border border-gray-200">
+              <div className="flex items-center justify-between mb-6">
+                <h4 className="text-lg font-bold text-gray-900">Top Positions</h4>
+                <div className="relative group">
+                  <Info size={16} className="text-gray-400 cursor-help hover:text-gray-600 transition-colors" />
+                  <div className="absolute bottom-full left-0 mb-2 w-72 p-3 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity z-50 shadow-lg">
+                    Shows the most common job titles in your LinkedIn network
+                  </div>
+                </div>
+              </div>
+              {audienceDistribution.positions.length > 0 ? (
+                <div className="space-y-3 max-h-80 overflow-y-auto">
+                  {audienceDistribution.positions.slice(0, 10).map((position, index) => (
+                    <div key={position.name} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                      <div className="flex items-center space-x-3">
+                        <div className={`w-3 h-3 rounded-full`} style={{ backgroundColor: COLORS[(index + 3) % COLORS.length] }}></div>
+                        <span className="font-medium text-gray-900 text-sm">{position.name || 'Unknown'}</span>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-bold text-gray-900">{position.value || 0}</div>
+                        <div className="text-xs text-gray-500">connections</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="h-64 flex items-center justify-center text-gray-500">
+                  <div className="text-center">
+                    <Users size={32} className="mx-auto mb-2 text-gray-300" />
+                    <p className="text-sm">No position data available</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </Card>
+      )}
+
+      {/* Score Improvement Tips */}
+      {!showEmptyState && Object.keys(scoreImpacts).length > 0 && (
+        <Card variant="glass" className="p-8 bg-gradient-to-br from-indigo-50 to-purple-50 border-2 border-indigo-200">
+          <div className="flex items-center space-x-3 mb-8">
+            <div className="p-3 bg-gradient-to-r from-indigo-500 to-purple-500 rounded-xl">
+              <TrendingUp size={24} className="text-white" />
+            </div>
+            <div>
+              <h3 className="text-2xl font-bold text-gray-900">Improvement Recommendations</h3>
+              <p className="text-gray-600">Actionable tips to boost your LinkedIn performance</p>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {Object.entries(scoreImpacts).slice(0, 6).map(([key, impact]) => (
+              <motion.div 
+                key={key} 
+                className="bg-white p-6 rounded-xl border border-gray-200 hover:shadow-lg transition-all duration-300"
+                whileHover={{ y: -2 }}
+              >
+                <h4 className="font-bold text-gray-900 capitalize mb-3 text-lg">
+                  {key.replace(/([A-Z])/g, ' $1').trim()}
+                </h4>
+                <p className="text-sm text-gray-700 mb-4 leading-relaxed">{impact?.description || "No description available"}</p>
+                <ul className="text-sm text-gray-600 space-y-2">
+                  {(impact?.tips ?? []).map((tip, index) => (
+                    <li key={index} className="flex items-start space-x-2">
+                      <span className="w-2 h-2 bg-indigo-500 rounded-full mt-2 flex-shrink-0"></span>
+                      <span className="leading-relaxed">{tip}</span>
+                    </li>
+                  ))}
+                </ul>
+              </motion.div>
+            ))}
+          </div>
+        </Card>
+      )}
+    </motion.div>
+  );
+};
+
+const EmptyActivityState = ({ dashboardData, onRefetch, isRefetching, setCurrentModule }) => {
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.5 }}
+      className="space-y-6"
+    >
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold">Dashboard</h2>
+          <p className="text-gray-600 mt-1">No recent activity (28 days). Showing snapshot totals.</p>
+        </div>
+        <Button
+          variant="outline"
+          onClick={onRefetch}
+          disabled={isRefetching}
+        >
+          <RefreshCw size={14} className={`mr-1 ${isRefetching ? 'animate-spin' : ''}`} />
+          {isRefetching ? "Refreshing..." : "Refresh"}
+        </Button>
+      </div>
+
+      <Card variant="glass" className="p-12 text-center bg-gradient-to-br from-blue-50 to-indigo-50 border-2 border-blue-200">
+        <div className="max-w-2xl mx-auto">
+          <div className="w-20 h-20 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center mx-auto mb-6">
+            <FileText size={32} className="text-white" />
+          </div>
+          <h3 className="text-2xl font-bold text-gray-900 mb-4">No Recent LinkedIn Activity</h3>
+          <p className="text-gray-700 mb-8 leading-relaxed">
+            We haven't detected any posts, comments, or network activity in the last 28 days. 
+            Your dashboard will show meaningful insights once you start engaging on LinkedIn.
+          </p>
+          
+          {/* Show baseline metrics if available */}
+          {dashboardData && (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+              <div className="bg-white p-4 rounded-xl border border-blue-200">
+                <div className="text-2xl font-bold text-blue-600">{dashboardData.summary?.totalConnections || 0}</div>
+                <div className="text-sm text-gray-600">Total Connections</div>
+              </div>
+              <div className="bg-white p-4 rounded-xl border border-blue-200">
+                <div className="text-2xl font-bold text-blue-600">{dashboardData.scores?.profileCompleteness || 0}/10</div>
+                <div className="text-sm text-gray-600">Profile Completeness</div>
+              </div>
+              <div className="bg-white p-4 rounded-xl border border-blue-200">
+                <div className="text-2xl font-bold text-blue-600">{dashboardData.scores?.professionalBrand || 0}/10</div>
+                <div className="text-sm text-gray-600">Professional Brand</div>
               </div>
             </div>
           )}
-        </div>
 
-        {/* Position Distribution */}
-        <div className="bg-white p-6 rounded-xl border border-gray-200">
-          <div className="flex items-center justify-between mb-6">
-            <h4 className="text-lg font-bold text-gray-900">Positions</h4>
-            <div className="relative group">
-              <Info size={16} className="text-gray-400 cursor-help hover:text-gray-600 transition-colors" />
-              <div className="absolute bottom-full right-0 mb-2 w-72 p-3 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity z-10 shadow-lg">
-                Professional connections enhance your network quality
-              </div>
+          <div className="space-y-4">
+            <h4 className="text-lg font-semibold text-gray-900">Get Started with LinkedIn Growth</h4>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <Button
+                variant="primary"
+                onClick={() => window.open('https://linkedin.com', '_blank')}
+                className="flex items-center justify-center space-x-2"
+              >
+                <ExternalLink size={16} />
+                <span>Post on LinkedIn</span>
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => setCurrentModule('postgen')}
+                className="flex items-center justify-center space-x-2"
+              >
+                <Zap size={16} />
+                <span>Generate Content</span>
+              </Button>
             </div>
           </div>
-          {audienceDistribution.positions.length > 0 ? (
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={audienceDistribution.positions.slice(0, 8)} layout="horizontal">
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis type="number" />
-              <YAxis dataKey="name" type="category" width={120} tick={{ fontSize: 11 }} />
-              <Tooltip 
-                contentStyle={{ 
-                  backgroundColor: 'white', 
-                  border: '1px solid #e5e7eb', 
-                  borderRadius: '8px',
-                  boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-                }} 
-              />
-              <Bar dataKey="value" fill="#82ca9d" radius={[0, 4, 4, 0]} />
-            </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="h-72 flex items-center justify-center text-gray-500">
-              <div className="text-center">
-                <Users size={32} className="mx-auto mb-2 text-gray-300" />
-                <p className="text-sm">No position data</p>
+        </div>
+      </Card>
+    </motion.div>
+  );
+};
               </div>
             </div>
           )}
