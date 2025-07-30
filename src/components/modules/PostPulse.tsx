@@ -151,7 +151,7 @@ export const PostPulse = () => {
         <div className="text-center">
           <LoadingSpinner size="lg" />
           <p className="mt-4 text-gray-600">Loading your LinkedIn posts...</p>
-          <p className="text-sm text-gray-500">Analyzing your content...</p>
+          <p className="text-sm text-gray-500">Check console for detailed logs...</p>
         </div>
       </motion.div>
     );

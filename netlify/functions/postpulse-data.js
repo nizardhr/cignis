@@ -102,8 +102,9 @@ export async function handler(event, context) {
 async function fetchMemberChangelog(authorization, startTime) {
   try {
     const count = 50; // Max allowed by DMA
-    const url = `https://api.linkedin.com/rest/memberChangeLogs?q=memberAndApplication&count=${count}`;
-    // Remove startTime filter to get more recent data for testing
+    const url = `https://api.linkedin.com/rest/memberChangeLogs?q=memberAndApplication&count=${count}&startTime=${startTime}`;
+    
+    console.log("🔗 Fetching changelog from:", url);
     
     const response = await fetch(url, {
       headers: {
@@ -113,25 +114,28 @@ async function fetchMemberChangelog(authorization, startTime) {
     });
 
     if (!response.ok) {
-      console.warn(`Changelog API returned ${response.status}`);
+      console.warn(`⚠️ Changelog API returned ${response.status}`);
       return { elements: [] };
     }
 
     const data = await response.json();
-    console.log(`Fetched ${data.elements?.length || 0} changelog events`, {
+    console.log(`📥 Fetched ${data.elements?.length || 0} changelog events`);
+    console.log("📊 Changelog summary:", {
       resourceNames: data.elements?.map(e => e.resourceName).slice(0, 10),
       methods: data.elements?.map(e => e.method).slice(0, 10),
       owners: data.elements?.map(e => e.owner).slice(0, 5)
     });
     return data;
   } catch (error) {
-    console.error("Error fetching changelog:", error);
+    console.error("❌ Error fetching changelog:", error);
     return { elements: [] };
   }
 }
 
 async function fetchHistoricalPosts(authorization, daysBack) {
   try {
+    console.log("🔗 Fetching historical posts for", daysBack, "days back");
+    
     const response = await fetch(
       `/.netlify/functions/linkedin-historical-posts?daysBack=${daysBack}&count=50`,
       {
@@ -142,15 +146,16 @@ async function fetchHistoricalPosts(authorization, daysBack) {
     );
 
     if (!response.ok) {
-      console.warn(`Historical posts API returned ${response.status}`);
+      console.warn(`⚠️ Historical posts API returned ${response.status}`);
       return { elements: [] };
     }
 
     const data = await response.json();
-    console.log(`Fetched historical posts: ${data.elements?.length || 0} elements`);
+    console.log(`📥 Fetched historical posts: ${data.elements?.length || 0} elements`);
+    console.log("📊 Historical data summary:", data.elements?.[0]?.snapshotData?.length || 0, "shares");
     return data;
   } catch (error) {
-    console.error("Error fetching historical posts:", error);
+    console.error("❌ Error fetching historical posts:", error);
     return { elements: [] };
   }
 }
@@ -158,48 +163,81 @@ async function fetchHistoricalPosts(authorization, daysBack) {
 function processChangelogPosts(changelogData, authorization) {
   const posts = [];
   const elements = changelogData?.elements || [];
+  
+  console.log("=== PROCESSING CHANGELOG POSTS ===");
+  console.log("Total elements:", elements.length);
 
   // Get current user ID for filtering
   const currentUserId = elements.find(e => e.owner)?.owner;
-  console.log("Current user ID:", currentUserId);
+  console.log("🔍 Current user ID:", currentUserId);
+  
+  // Log all ugcPosts events for debugging
+  const allUgcPosts = elements.filter(e => e.resourceName === "ugcPosts");
+  console.log("🔍 Total ugcPosts events:", allUgcPosts.length);
+  
+  allUgcPosts.forEach((post, index) => {
+    console.log(`📝 UGC Post ${index + 1}:`, {
+      resourceId: post.resourceId,
+      method: post.method,
+      owner: post.owner,
+      actor: post.actor,
+      lifecycleState: post.processedActivity?.lifecycleState || post.activity?.lifecycleState,
+      author: post.processedActivity?.author || post.activity?.author || post.owner
+    });
+  });
 
   // Filter to person posts only
   const personPosts = elements.filter(event => {
+    console.log("=== FILTERING CHANGELOG POST ===");
+    console.log("Resource name:", event.resourceName);
+    console.log("Post ID:", event.resourceId);
+    console.log("Method:", event.method);
+    console.log("Owner:", event.owner);
+    console.log("Actor:", event.actor);
+    
     // Must be a ugcPost
     if (event.resourceName !== "ugcPosts") return false;
 
     // Exclude DELETE method
     if (event.method === "DELETE") {
-      console.log("Excluding DELETE post:", event.resourceId);
+      console.log("❌ EXCLUDED: DELETE method");
       return false;
     }
 
     // Check for deleted lifecycle state
     const lifecycleState = event.processedActivity?.lifecycleState || event.activity?.lifecycleState;
+    console.log("Lifecycle state:", lifecycleState);
     if (lifecycleState === "DELETED" || lifecycleState === "REMOVED") {
-      console.log("Excluding deleted lifecycle post:", event.resourceId);
+      console.log("❌ EXCLUDED: Deleted lifecycle state");
       return false;
     }
 
     // Check if this is the user's own post
-    // For ugcPosts, the owner should be the current user
-    if (event.owner !== currentUserId) {
-      console.log("Excluding post from different user:", event.resourceId, "owner:", event.owner);
+    const isOwnPost = event.owner === currentUserId;
+    console.log("Is own post:", isOwnPost);
+    
+    if (!isOwnPost) {
+      console.log("❌ EXCLUDED: Not current user's post");
       return false;
     }
 
     // Additional check: ensure the author is a person (not organization)
     const author = event.processedActivity?.author || event.activity?.author || event.owner;
-    if (author && typeof author === 'string' && !author.startsWith('urn:li:person:')) {
-      console.log("Excluding non-person authored post:", event.resourceId, "author:", author);
+    console.log("Author:", author);
+    
+    const isPersonAuthor = !author || (typeof author === 'string' && author.startsWith('urn:li:person:'));
+    console.log("Is person author:", isPersonAuthor);
+    
+    if (!isPersonAuthor) {
+      console.log("❌ EXCLUDED: Non-person author");
       return false;
     }
 
-    console.log("Including person post:", event.resourceId, "author:", author);
+    console.log("✅ INCLUDED: Valid person post");
     return true;
   });
 
-  console.log(`Found ${personPosts.length} person posts out of ${elements.length} total events`);
+  console.log(`🎯 FINAL RESULT: Found ${personPosts.length} person posts out of ${elements.length} total events`);
 
   personPosts.forEach(event => {
     try {
@@ -244,15 +282,33 @@ function processChangelogPosts(changelogData, authorization) {
 function processHistoricalPosts(historicalData, authorization) {
   const posts = [];
   
+  console.log("=== PROCESSING HISTORICAL POSTS ===");
+  console.log("Historical data elements:", historicalData.elements?.length || 0);
+  
   if (!historicalData.elements) return posts;
 
   historicalData.elements.forEach((element) => {
     if (element.snapshotDomain === "MEMBER_SHARE_INFO" && element.snapshotData) {
+      console.log(`📊 Processing ${element.snapshotData.length} historical shares`);
+      
       element.snapshotData.forEach((share, index) => {
         try {
-          // Skip company posts - but be more lenient with visibility checks
-          // Some personal posts might have different visibility settings
-          console.log("Processing historical share with visibility:", share.Visibility);
+          console.log(`=== HISTORICAL SHARE ${index + 1} ===`);
+          console.log("Share data:", {
+            Date: share.Date,
+            Visibility: share.Visibility,
+            ShareCommentary: share.ShareCommentary?.substring(0, 50) + "...",
+            ShareLink: share.ShareLink,
+            MediaType: share.MediaType,
+            LikesCount: share.LikesCount,
+            CommentsCount: share.CommentsCount
+          });
+          
+          // Skip company posts but be more lenient
+          if (share.Visibility === "COMPANY" || share.Visibility === "ORGANIZATION") {
+            console.log("❌ EXCLUDED: Company/Organization post");
+            return;
+          }
 
           const timestamp = new Date(share.Date).getTime();
           const daysSincePosted = Math.floor((Date.now() - timestamp) / (24 * 60 * 60 * 1000));
@@ -268,6 +324,7 @@ function processHistoricalPosts(historicalData, authorization) {
 
           // Extract media information from historical posts
           const mediaInfo = extractHistoricalMediaInfo(share, authorization);
+          console.log("Media info extracted:", mediaInfo);
 
           posts.push({
             id: postId,
@@ -286,6 +343,8 @@ function processHistoricalPosts(historicalData, authorization) {
             comments: parseInt(share.CommentsCount) || 0,
             shares: parseInt(share.SharesCount) || 0,
           });
+          
+          console.log("✅ INCLUDED: Historical post added");
         } catch (error) {
           console.error("Error processing historical share:", error, share);
         }
@@ -293,6 +352,7 @@ function processHistoricalPosts(historicalData, authorization) {
     }
   });
 
+  console.log(`🎯 HISTORICAL RESULT: Processed ${posts.length} historical posts`);
   return posts.sort((a, b) => b.timestamp - a.timestamp);
 }
 
@@ -393,23 +453,31 @@ function extractHistoricalMediaInfo(share, authorization) {
 }
 
 function mergeAndDeduplicatePosts(changelogPosts, historicalPosts) {
+  console.log("=== MERGING POSTS ===");
+  console.log("📊 Input counts:", {
+    changelog: changelogPosts.length,
+    historical: historicalPosts.length
+  });
+  
   const postMap = new Map();
   
   // Add historical posts first
   historicalPosts.forEach(post => {
+    console.log("📝 Adding historical post:", post.id);
     postMap.set(post.id, post);
   });
   
   // Add changelog posts, preferring them over historical if there's a conflict
   changelogPosts.forEach(post => {
     const existingPost = postMap.get(post.id);
+    console.log("📝 Processing changelog post:", post.id, "exists:", !!existingPost);
     if (!existingPost || post.source === "changelog") {
       postMap.set(post.id, post);
     }
   });
 
   const merged = Array.from(postMap.values());
-  console.log(`Merged ${historicalPosts.length} historical + ${changelogPosts.length} changelog = ${merged.length} unique posts`);
+  console.log(`🎯 MERGE RESULT: ${historicalPosts.length} historical + ${changelogPosts.length} changelog = ${merged.length} unique posts`);
   
   return merged.sort((a, b) => b.timestamp - a.timestamp);
 }

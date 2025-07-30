@@ -73,29 +73,47 @@ export async function handler(event, context) {
     console.log(`Dashboard Data: Found ${allPosts.length} total ugcPosts events`);
 
     const personPosts = allPosts.filter(post => {
+      console.log("=== FILTERING POST ===");
+      console.log("Post ID:", post.resourceId);
+      console.log("Method:", post.method);
+      console.log("Owner:", post.owner);
+      console.log("Actor:", post.actor);
+      console.log("Current User ID:", currentUserId);
+      
       // Exclude DELETE method (deleted objects don't carry content per PDF)
       if (post.method === "DELETE") {
-        console.log("Excluding DELETE post:", post.resourceId);
+        console.log("❌ EXCLUDED: DELETE method");
         return false;
       }
 
       // Check for deleted lifecycle state
       const lifecycleState = post.processedActivity?.lifecycleState || post.activity?.lifecycleState;
+      console.log("Lifecycle state:", lifecycleState);
       if (lifecycleState === "DELETED" || lifecycleState === "REMOVED") {
-        console.log("Excluding deleted lifecycle post:", post.resourceId);
+        console.log("❌ EXCLUDED: Deleted lifecycle state");
         return false;
       }
 
       // Require author to be a person (urn:li:person:), not organization
       const author = post.processedActivity?.author || post.activity?.author || post.owner;
+      console.log("Author:", author);
       const isPersonPost = author && typeof author === 'string' && author.startsWith('urn:li:person:');
       
       if (!isPersonPost) {
-        console.log("Excluding non-person post:", post.resourceId, "author:", author);
+        console.log("❌ EXCLUDED: Non-person author");
         return false;
       }
 
-      console.log("Including person post:", post.resourceId, "author:", author);
+      // Check if this is the current user's post
+      const isOwnPost = post.owner === currentUserId;
+      console.log("Is own post:", isOwnPost);
+      
+      if (!isOwnPost) {
+        console.log("❌ EXCLUDED: Not current user's post");
+        return false;
+      }
+      
+      console.log("✅ INCLUDED: Valid person post");
       return true;
     });
 
