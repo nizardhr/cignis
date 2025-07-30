@@ -143,3 +143,4 @@ export const usePostPulseData = (
     },
     lastUpdated: new Date().toISOString(),
   };
+}
