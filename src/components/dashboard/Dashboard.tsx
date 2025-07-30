@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { AlertCircle, Zap, RefreshCw, Database } from "lucide-react";
+import { AlertCircle, Zap, RefreshCw, Database, TrendingUp, Users, FileText, Heart } from "lucide-react";
 import { Card } from "../ui/Card";
 import { Button } from "../ui/Button";
 import { LoadingSpinner } from "../ui/LoadingSpinner";
@@ -9,6 +9,7 @@ import { useDashboardData } from "../../hooks/useDashboardData";
 import { ProfileEvaluationCard } from "./ProfileEvaluationCard";
 import { SummaryKPIsCard } from "./SummaryKPIsCard";
 import { MiniTrendsCard } from "./MiniTrendsCard";
+import { QuickStatsCard } from "./QuickStatsCard";
 import { useAppStore } from "../../stores/appStore";
 
 export const Dashboard = () => {
@@ -166,9 +167,9 @@ export const Dashboard = () => {
 
       {/* Debug Panel */}
       {debugMode && dashboardData && (
-        <Card variant="glass" className="p-4 bg-blue-50 border-blue-200">
+        <Card variant="glass" className="p-6 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 shadow-lg">
           <div className="flex items-center justify-between mb-2">
-            <h3 className="font-semibold flex items-center">
+            <h3 className="font-semibold flex items-center text-blue-900">
               <Database size={16} className="mr-2" />
               Debug Information
             </h3>
@@ -180,27 +181,43 @@ export const Dashboard = () => {
               Hide
             </Button>
           </div>
-          <div className="text-sm space-y-2">
-            <div>Last Updated: {dashboardData.lastUpdated}</div>
-            <div>DMA Token: {dmaToken ? 'Present' : 'Missing'}</div>
+          <div className="text-sm space-y-3 text-blue-800">
+            <div className="flex items-center space-x-2">
+              <span className="font-medium">Last Updated:</span>
+              <span className="bg-white px-2 py-1 rounded text-blue-900">{new Date(dashboardData.lastUpdated).toLocaleString()}</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <span className="font-medium">DMA Token:</span>
+              <span className={`px-2 py-1 rounded ${dmaToken ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+                {dmaToken ? 'Present' : 'Missing'}
+              </span>
+            </div>
             <div className="grid grid-cols-2 gap-4">
               <div>
-                <strong>Profile Evaluation:</strong>
-                <div>Overall Score: {dashboardData.profileEvaluation.overallScore}/10</div>
-                <div>Scores: {Object.values(dashboardData.profileEvaluation.scores).join(', ')}</div>
+                <div className="bg-white p-3 rounded-lg">
+                  <strong className="text-blue-900">Profile Evaluation:</strong>
+                  <div className="mt-1 text-sm">Overall Score: <span className="font-bold">{dashboardData.profileEvaluation.overallScore}/10</span></div>
+                  <div className="text-xs text-gray-600 mt-1">Scores: {Object.values(dashboardData.profileEvaluation.scores).join(', ')}</div>
+                </div>
               </div>
               <div>
-                <strong>Summary KPIs:</strong>
-                <div>Total Connections: {dashboardData.summaryKPIs.totalConnections}</div>
-                <div>Posts (30d): {dashboardData.summaryKPIs.postsLast30Days}</div>
-                <div>Engagement Rate: {dashboardData.summaryKPIs.engagementRate}</div>
-                <div>New Connections: {dashboardData.summaryKPIs.connectionsLast30Days}</div>
+                <div className="bg-white p-3 rounded-lg">
+                  <strong className="text-blue-900">Summary KPIs:</strong>
+                  <div className="mt-1 text-sm space-y-1">
+                    <div>Connections: <span className="font-bold">{dashboardData.summaryKPIs.totalConnections}</span></div>
+                    <div>Posts (30d): <span className="font-bold">{dashboardData.summaryKPIs.postsLast30Days}</span></div>
+                    <div>Engagement: <span className="font-bold">{dashboardData.summaryKPIs.engagementRate}</span></div>
+                    <div>New Connections: <span className="font-bold">{dashboardData.summaryKPIs.connectionsLast30Days}</span></div>
+                  </div>
+                </div>
               </div>
             </div>
-            <div>
-              <strong>Mini Trends:</strong>
-              <div>Posts: {dashboardData.miniTrends.posts.map(p => p.value).join(', ')}</div>
-              <div>Engagements: {dashboardData.miniTrends.engagements.map(e => e.value).join(', ')}</div>
+            <div className="bg-white p-3 rounded-lg">
+              <strong className="text-blue-900">Mini Trends:</strong>
+              <div className="mt-1 text-xs space-y-1">
+                <div>Posts: {dashboardData.miniTrends.posts.map(p => p.value).join(', ')}</div>
+                <div>Engagements: {dashboardData.miniTrends.engagements.map(e => e.value).join(', ')}</div>
+              </div>
             </div>
             <div className="mt-4">
               <Button
@@ -214,6 +231,42 @@ export const Dashboard = () => {
           </div>
         </Card>
       )}
+
+      {/* Quick Stats Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <QuickStatsCard
+          title="Overall Score"
+          value={`${dashboardData.profileEvaluation.overallScore}/10`}
+          change={dashboardData.profileEvaluation.overallScore >= 7 ? "+Good" : "Needs Work"}
+          icon={TrendingUp}
+          color="blue"
+          trend={dashboardData.profileEvaluation.overallScore >= 7 ? "up" : "down"}
+        />
+        <QuickStatsCard
+          title="Total Connections"
+          value={dashboardData.summaryKPIs.totalConnections.toLocaleString()}
+          change={`+${dashboardData.summaryKPIs.connectionsLast30Days} this month`}
+          icon={Users}
+          color="green"
+          trend="up"
+        />
+        <QuickStatsCard
+          title="Posts (30d)"
+          value={dashboardData.summaryKPIs.postsLast30Days}
+          change={dashboardData.summaryKPIs.postsLast30Days >= 5 ? "Active" : "Low Activity"}
+          icon={FileText}
+          color="purple"
+          trend={dashboardData.summaryKPIs.postsLast30Days >= 5 ? "up" : "down"}
+        />
+        <QuickStatsCard
+          title="Engagement Rate"
+          value={dashboardData.summaryKPIs.engagementRate}
+          change={parseFloat(dashboardData.summaryKPIs.engagementRate) >= 3 ? "Strong" : "Growing"}
+          icon={Heart}
+          color="orange"
+          trend={parseFloat(dashboardData.summaryKPIs.engagementRate) >= 3 ? "up" : "stable"}
+        />
+      </div>
 
       {/* Profile Evaluation */}
       <ProfileEvaluationCard
@@ -231,43 +284,58 @@ export const Dashboard = () => {
       {/* Quick Actions */}
       <Card variant="glass" className="p-6">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold flex items-center">
+          <h3 className="text-xl font-bold flex items-center text-gray-900">
             <Zap className="mr-2" size={20} />
             Quick Actions
           </h3>
+          <div className="text-sm text-gray-500">
+            Boost your LinkedIn presence
+          </div>
         </div>
-        <div className="space-y-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="w-full p-3 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-lg hover:from-indigo-600 hover:to-purple-600 transition-all"
+            className="w-full p-4 bg-gradient-to-r from-indigo-500 to-purple-500 text-white rounded-xl hover:from-indigo-600 hover:to-purple-600 transition-all shadow-lg hover:shadow-xl"
             onClick={() => setCurrentModule("analytics")}
           >
-            📊 View Detailed Analytics
+            <div className="flex items-center justify-center space-x-2">
+              <span className="text-2xl">📊</span>
+              <span className="font-semibold">View Detailed Analytics</span>
+            </div>
           </motion.button>
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="w-full p-3 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg hover:from-purple-600 hover:to-pink-600 transition-all"
+            className="w-full p-4 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-xl hover:from-purple-600 hover:to-pink-600 transition-all shadow-lg hover:shadow-xl"
             onClick={() => setCurrentModule("postgen")}
           >
-            ✍️ Generate New Post
+            <div className="flex items-center justify-center space-x-2">
+              <span className="text-2xl">✍️</span>
+              <span className="font-semibold">Generate New Post</span>
+            </div>
           </motion.button>
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="w-full p-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg hover:from-green-600 hover:to-emerald-600 transition-all"
+            className="w-full p-4 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-xl hover:from-green-600 hover:to-emerald-600 transition-all shadow-lg hover:shadow-xl"
             onClick={() => setCurrentModule("postpulse")}
           >
-            📈 Analyze Posts (PostPulse)
+            <div className="flex items-center justify-center space-x-2">
+              <span className="text-2xl">📈</span>
+              <span className="font-semibold">Analyze Posts</span>
+            </div>
           </motion.button>
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
-            className="w-full p-3 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-lg hover:from-green-600 hover:to-emerald-600 transition-all"
+            className="w-full p-4 bg-gradient-to-r from-cyan-500 to-blue-500 text-white rounded-xl hover:from-cyan-600 hover:to-blue-600 transition-all shadow-lg hover:shadow-xl"
             onClick={() => setCurrentModule("scheduler")}
           >
-            📅 Schedule Content
+            <div className="flex items-center justify-center space-x-2">
+              <span className="text-2xl">📅</span>
+              <span className="font-semibold">Schedule Content</span>
+            </div>
           </motion.button>
         </div>
       </Card>

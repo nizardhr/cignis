@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Users, FileText, Heart, UserPlus } from 'lucide-react';
+import { Users, FileText, Heart, UserPlus, TrendingUp } from 'lucide-react';
 import { Card } from '../ui/Card';
 import { SummaryKPIs } from '../../hooks/useDashboardData';
 
@@ -44,25 +44,36 @@ export const SummaryKPIsCard = ({ kpis }: SummaryKPIsCardProps) => {
   ];
 
   return (
-    <Card variant="glass" className="p-6">
-      <h3 className="text-xl font-bold text-gray-900 mb-6">Summary KPIs</h3>
+    <Card variant="glass" className="p-8 bg-gradient-to-br from-white to-gray-50 border-2 border-gray-100 hover:shadow-xl transition-all duration-300">
+      <div className="flex items-center space-x-3 mb-8">
+        <div className="p-3 bg-gradient-to-r from-cyan-500 to-blue-500 rounded-xl">
+          <TrendingUp size={24} className="text-white" />
+        </div>
+        <div>
+          <h3 className="text-2xl font-bold text-gray-900">Key Metrics</h3>
+          <p className="text-gray-600">Your LinkedIn performance at a glance</p>
+        </div>
+      </div>
       
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-6">
         {kpiItems.map((item, index) => (
           <motion.div
             key={item.label}
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ delay: index * 0.1 }}
-            className="text-center"
+            className="text-center group"
           >
-            <div className={`w-12 h-12 ${item.bgColor} rounded-xl flex items-center justify-center mx-auto mb-3`}>
+            <motion.div 
+              className={`w-16 h-16 ${item.bgColor} rounded-2xl flex items-center justify-center mx-auto mb-4 shadow-lg group-hover:shadow-xl transition-all duration-300`}
+              whileHover={{ scale: 1.1, rotate: 5 }}
+            >
               <item.icon size={24} className={item.textColor} />
-            </div>
-            <div className="text-2xl font-bold text-gray-900 mb-1">
+            </motion.div>
+            <div className="text-3xl font-bold text-gray-900 mb-2">
               {item.value}
             </div>
-            <div className="text-sm text-gray-600">
+            <div className="text-sm font-medium text-gray-600">
               {item.label}
             </div>
           </motion.div>
