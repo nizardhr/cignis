@@ -257,8 +257,8 @@ export const PostPulse = () => {
                 variant="primary"
                 onClick={() => window.open('https://linkedin.com', '_blank')}
               >
-              <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded-full text-xs">
-                {post.source === "member_share_info" ? "LinkedIn Archive" : post.source}
+                <ExternalLink size={16} className="mr-2" />
+                Go to LinkedIn
               </Button>
             </div>
           </div>
@@ -291,11 +291,9 @@ export const PostPulse = () => {
                   >
                     {/* Source Indicator */}
                     <div className="absolute top-4 left-4">
-                      <div
-                        className="px-2 py-1 rounded-full text-xs font-medium bg-purple-100 text-purple-800"
-                      >
-                        LinkedIn Archive
-                      </div>
+                      <span className="bg-purple-100 text-purple-800 px-2 py-1 rounded-full text-xs">
+                        {post.source === "member_share_info" ? "LinkedIn Archive" : post.source}
+                      </span>
                     </div>
 
                     {/* Status Badge */}
